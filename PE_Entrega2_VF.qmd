@@ -78,7 +78,8 @@ Para la elaboración de la base de datos final, primero se procedió con el arma
 ```{r}
 rm(list = ls())
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras )
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras,vars,zoo )
+
 
 ```
 
@@ -97,7 +98,7 @@ I <- I %>%
     m3 = m3 / (10^6),
     balanza = balanza / (10^6),
     remesas = remesas / (10^3),
-    puestos_trabajo = nacional / (10^6),
+    puestos_trabajo = puestos_trabajo / (10^6),
     tiie_fondeo = tiie_fondeo / 100
   )
 
@@ -340,7 +341,7 @@ En cuanto a las variables de pérdida crediticia, éstas presentan comportamient
 library(corrplot)
 
 corr_data <- I %>%
-  select(-llave, -nacional) 
+  select(-llave, -puestos_trabajo) 
 
 corrplot(cor(corr_data), method = "color", type = "upper", tl.cex = 0.8)
 ```
@@ -381,8 +382,12 @@ master_base <- master_base%>%
     m3 = m3 / (10^6),
     balanza = balanza / (10^6),
     remesas = remesas / (10^3),
-    puestos_trabajo = nacional / (10^6),
+    puestos_trabajo = puestos_trabajo / (10^6),
     tiie_fondeo = tiie_fondeo / 100
+  )
+master_base <- master_base %>%
+  mutate(
+    igoec = as.numeric(gsub(",", ".", trimws(as.character(igoec))))
   )
 XV <- master_base %>% mutate(llave = ym(llave)) %>% arrange(llave)
 variables_numericas <- XV %>% select(-fecha, -llave) %>% select(where(is.numeric)) %>% names()
@@ -788,3 +793,77 @@ Para el análisis de nuestras variables, planeamos hacer la comparación entre l
     -   Ventajas: Alta precisión, maneja grandes volúmenes de datos, robusto a variables irrelevantes y permite interpretar importancia de variables.
 
     -   Consideraciones: Evitar fuga de información temporal ( data leakage), usar variables rezagadas, validar con divisiones temporales adecuadas (walk-forward).
+
+VAR
+
+```{r}
+
+
+# Supongamos que df_diff ya tiene las primeras diferencias y 'llave' es as.yearmon
+# Y que predicciones ya fue generado con predict(modelo_var)
+
+# Horizonte
+h <- 5
+
+# Fechas futuras
+fechas_futuras <- seq(max(df_diff$llave) + 1/12, by = 1/12, length.out = h)
+
+# Obtener último valor real por variable
+ultimo_real <- df_diff %>% 
+  filter(llave == max(llave)) %>% 
+  dplyr::select(-llave) %>% 
+  unlist() %>% 
+  as.numeric()
+
+# Crear fila inicial con último valor real
+inicio_forecast <- data.frame(matrix(NA, nrow = 1, ncol = length(ultimo_real)))
+colnames(inicio_forecast) <- names(predicciones$fcst)
+inicio_forecast[1, ] <- ultimo_real
+inicio_forecast$llave <- max(df_diff$llave)
+
+# Crear predicciones dataframe
+pred_df <- data.frame(fechas_futuras)
+for (var in names(predicciones$fcst)) {
+  pred_df[[var]] <- predicciones$fcst[[var]][, "fcst"]
+}
+pred_df <- pred_df %>%
+  rename(llave = fechas_futuras)
+
+# Unir el último punto real al inicio de las predicciones
+pred_df <- bind_rows(inicio_forecast, pred_df)
+
+# Formato largo
+df_pred_long <- pred_df %>%
+  pivot_longer(-llave, names_to = "variable", values_to = "forecast")
+
+# Datos reales recientes
+df_real_long <- df_diff %>%
+  filter(llave >= (max(df_diff$llave) - (h + 2) / 12)) %>%
+  pivot_longer(-llave, names_to = "variable", values_to = "real")
+
+# Unir reales y pronósticos
+df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %>%
+  mutate(
+    real_bps = real * 10000,
+    forecast_bps = forecast * 10000
+  )
+
+# Gráfica final
+ggplot(df_final, aes(x = llave)) +
+  geom_line(aes(y = real_bps, color = "Real")) +
+  geom_line(aes(y = forecast_bps, color = "Forecast"), linetype = "dashed") +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    title = "VAR con Exógenas: Serie Real y Predicción",
+    x = "Mes",
+    y = "Diferencia mensual (bps)",
+    color = ""
+  ) +
+  scale_color_manual(values = c("Real" = "black", "Forecast" = "blue"))
+
+```
