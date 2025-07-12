@@ -1,0 +1,790 @@
+---
+title: "Modelos de Machine Learning (ML) basados en indicadores macroeconómicos para predecir la pérdida esperada en el sistema crediticio de México"
+lang: es 
+author:
+  - Andrea Rancaño Botaya
+  - José Angel Alonso Prieto
+  - Eduardo Daniel Morales Sánchez
+format:
+  pdf:
+    documentclass: article
+    geometry: margin=2.5cm
+    fig-align: center
+    tbl-align: center
+editor: visual
+execute:
+  echo: false
+  warning: false
+---
+
+## Pregunta de investigación
+
+¿Pueden los modelos de Machine Learning, entrenados con indicadores macroeconómicos, anticipar de manera precisa y oportuna la pérdida esperada futura del sistema crediticio mexicano?
+
+## Motivación
+
+Al permitir una identificación temprana de señales de deterioro crediticio, estos modelos se convierten en una herramienta clave tanto para las instituciones financieras como para las autoridades regulatorias, al facilitar la toma de decisiones informadas y el diseño de políticas macroprudenciales orientadas a preservar la estabilidad financiera.
+
+## Variables
+
+En este análisis se utilizaron diferentes variables para entender cómo evoluciona el riesgo crediticio y qué factores pueden influir en él. Por un lado, consideramos las pérdidas esperadas en distintos tipos de créditos (todos de stage 1); por otro, incluimos variables macroeconómicas que ayudan a explicar los cambios en estos riesgos. A continuación, se presentan las variables dependientes e independientes que forman parte del estudio.
+
+### Variables dependientes
+
+Las variables dependientes utilizadas en este análisis corresponden a la pérdida esperada en distintos segmentos del sistema crediticio mexicano, expresadas como porcentaje de los portafolios correspondientes. Separar la variable dependiente según el tipo de portafolio crediticio permite observar la heterogeneidad de riesgo en cada segmento de crédito, lo cual es fundamental tanto para mejorar la capacidad predictiva de los modelos como para hacer recomendaciones puntuales de políticas y estrategias de mitigación que sean más específicas y efectivas. Las variables dependientes son:
+
+1.  Pérdida esperada - actividad empresarial o comercial: Representa la pérdida esperada asociada a créditos otorgados para actividades empresariales o comerciales, reflejando el riesgo crediticio en el sector productivo.
+2.  Pérdida esperada - automotriz: Mide la pérdida esperada en el portafolio de créditos automotrices, es decir, aquellos destinados a la compra de vehículos.
+3.  Pérdida esperada - entidades financieras: Se refiere a la pérdida esperada en créditos otorgados a otras entidades financieras, capturando el riesgo sistémico entre intermediarios.
+4.  Pérdida esperada - nómina: Indica la pérdida esperada en créditos de nómina, comúnmente otorgados a trabajadores con ingresos fijos y descontados directamente de su salario.
+5.  Pérdida esperada - créditos personales: Representa la pérdida esperada en créditos personales, los cuales son generalmente de libre destino y sin una garantía específica.
+6.  Pérdida esperada - tarjeta de crédito: Mide la pérdida esperada en el portafolio de tarjetas de crédito, segmento caracterizado por alta rotación y riesgo de consumo.
+
+### Variables independientes
+
+Por su lado, las variables independientes incluyen diversos indicadores macroeconómicos y financieros que pueden influir en el comportamiento de las pérdidas esperadas en los distintos portafolios crediticios. Estas variables son:
+
+1.  IGAE (Indicador Global de Actividad Económica): Índice mensual base 2018=100 aproxima la evolución del PIB mexicano. Se publica en valores originales y ajustados por estacionalidad, para el análisis se han considerado los valores sin ajuste por estacionalidad.
+2.  INPC: Índice Nacional de Precios al Consumidor (INPC) indicador que mide la variación promedio de los precios de una canasta de bienes y servicios representativa del consumo de los hogares mexicanos a lo largo del tiempo (no se usa la inflación YoY para no tener efectos base).
+3.  Tasa de referencia (TIIE de fondeo): es la tasa de interés interbancaria de equilibrio utilizada como referencia para el fondeo entre bancos. Su valor actual, justo por debajo de la tasa objetivo, refleja las condiciones de liquidez del sistema financiero.
+4.  Empleo IMSS: Número total de trabajadores definitivos registrados en el Instituto Mexicano del Seguro Social. Indicador de empleo formal. 
+5.  Confianza empresarial: Resultados de la Encuesta Mensual de Opinión Empresarial (EMOE), mide la percepción de los empresarios sobre la situación actual y futura.
+6.  S&P 500: Índice bursátil que refleja el comportamiento de 500 empresas grandes en EE.UU. Promedio mensual de precios de cierre diarios. 
+7.  IPC: El Índice de Precios y Cotizaciones (IPC) es el principal indicador de desempeño de la Bolsa Mexicana de Valores. Está compuesto por las acciones de las empresas más grandes y con mayor liquidez de México.
+8.  Remesas: Ingresos por remesas familiares del exterior, en millones de USD. Publicación mensual del Banco de México. 
+9.  Saldo de la balanza comercial no petrolera: Diferencia mensual entre exportaciones e importaciones de mercancías sin considerar la balaza petrolera.
+10. Agregados monetarios M1, M2,M3: M1 es el dinero en efectivo y en cuentas de cheques, es decir, el que puedes gastar al instante. M2 incluye todo lo de M1, más los ahorros y los depósitos a plazo, por lo que es un poco menos líquido, pero todavía fácil de convertir en efectivo. M3 amplía aún más e incorpora lo de M2 más valores emitidos por instituciones no bancarias, por lo que representa dinero menos accesible de inmediato.
+
+Adicionalmente, se incorporan variables obtenidas de Google Trends que reflejan la frecuencia de búsqueda de términos como "deuda" y "empleo". La inclusión de estas variables responde a la necesidad de captar señales tempranas y complementarias sobre la percepción y las preocupaciones de la población, las cuales pueden anticipar cambios en el comportamiento crediticio antes de que estos se reflejen en los datos tradicionales. Este tipo de información, proveniente de fuentes alternativas, permite enriquecer el modelo con perspectivas que no están presentes en las bases de datos convencionales y que quizás pueden ofrecer una visión más inmediata de cambios en la confianza de los hogares o las condiciones del mercado laboral.
+
+11. Google Trends - deuda: Esta variable representa el volumen de búsquedas realizadas en Google relacionadas con el término "deuda" en México, obtenida a partir de Google Trends. Su objetivo es capturar cambios en el interés o preocupación de la población respecto a temas de endeudamiento.
+
+12. Google Trends - empleo: Esta variable corresponde al volumen de búsquedas en Google asociadas con el término "empleo", también basada en los datos de Google Trends para México. La inclusión de esta variable permite monitorear en tiempo real el interés de la población por cuestiones relacionadas con el empleo.
+
+## Datos
+
+Los datos de cartera y riesgo de crédito se tomaron de la Comisión Nacional Bancaria y de Valores (CNBV), Banxico, IMSS e INEGI, y se complementaron con datos de Google Trends (para búsquedas de "deuda" y "empleo").
+
+### Limpieza de datos
+
+Para la elaboración de la base de datos final, primero se procedió con el armado y la integración de las distintas fuentes de datos, asegurando la identificación correcta de variables numéricas, el ordenamiento de las fechas y la estandarización de formatos para garantizar la homologación entre todas las bases. Posteriormente, se trabajó en la homogeneización de los periodos disponibles, de manera que todas las series coincidieran en la misma frecuencia temporal y pudieran ser analizadas de forma conjunta. Finalmente, para preparar las variables para los análisis de series de tiempo y asegurar la estacionariedad, se aplicó la transformación de primeras diferencias utilizando un rezago mensual (lag de un mes), lo cual permitió obtener series listas para el modelado y la comparación de resultados.
+
+### Análisis Exploratorio de Datos (EDA)
+
+```{r}
+#setwd("/Users/arb/Desktop/PE")
+```
+
+```{r}
+rm(list = ls())
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras )
+
+```
+
+```{r}
+#| warning: false
+#| echo: false
+
+I <- read_excel(
+  glue::glue("master_base_filtrado.xlsx"),
+)%>%janitor::clean_names() 
+
+I <- I %>%
+  mutate(
+    m1 = m1 / (10^6),
+    m2 = m2 / (10^6),
+    m3 = m3 / (10^6),
+    balanza = balanza / (10^6),
+    remesas = remesas / (10^3),
+    puestos_trabajo = nacional / (10^6),
+    tiie_fondeo = tiie_fondeo / 100
+  )
+
+I <- I %>% select(-fecha) %>% 
+  mutate(across(-llave, ~ str_trim(as.character(.x)))) %>% 
+  mutate(across(-llave, as.numeric))%>% mutate(llave = ym(llave)) 
+```
+
+### Descripción general de los datos
+
+```{r}
+library(tibble)
+library(knitr)
+
+# Table 1: Data Overview (without 'Type' column)
+data_overview <- tribble(
+  ~Variable,                              ~Descripción,                                           ~Unidades,
+  "llave",                                "Fecha de observación (mensual)",                        "YYYY-MM-DD",
+  "y_pe_actividad_empresarial_o_comercial", "Pérdida esperada - Actividad empresarial/comercial",   "Decimal (x100 = %)",
+  "y_pe_automotriz",                      "Pérdida esperada - Crédito automotriz",                 "Decimal (x100 = %)",
+  "y_pe_entidades_financieras",          "Pérdida esperada - Entidades financieras",              "Decimal (x100 = %)",
+  "y_pe_nomina",                          "Pérdida esperada - Nómina",                             "Decimal (x100 = %)",
+  "y_pe_personales",                      "Pérdida esperada - Crédito personal",                   "Decimal (x100 = %)",
+  "y_pe_tarjeta_de_credito",             "Pérdida esperada - Tarjeta de crédito",                 "Decimal (x100 = %)",
+  "usd_mxn",                              "Tipo de cambio USD/MXN",                                "Pesos por USD",
+  "tiie_fondeo",                          "Tasa de fondeo bancaria (TIIE a un día)",               "Decimal (x100 = %)",
+  "remesas",                              "Remesas recibidas",                                     "Miles de millones USD",
+  "m1",                                   "Agregado monetario M1",                                 "Miles de millones MXN",
+  "m2",                                   "Agregado monetario M2",                                 "Miles de millones MXN",
+  "m3",                                   "Agregado monetario M3",                                 "Miles de millones MXN",
+  "balanza",                              "Balanza comercial",                                     "Miles de millones USD",
+  "inpc",                                 "Índice Nacional de Precios al Consumidor",              "Índice",
+  "igoec",                                "Indicador Global de la Actividad Económica (IGOE)",     "Índice",
+  "igae",                                 "IGAE - Base 2018 = 100",                                "Índice",
+  "google_deuda",                         "Tendencia de búsqueda Google: 'deuda'",                 "Índice",
+  "google_empleo",                        "Tendencia de búsqueda Google: 'empleo'",                "Índice",
+  "nacional",                             "Puestos de trabajo registrados IMSS",                   "Millones",
+  "s_p_bmv_ipc",                          "Índice bursátil S&P/BMV IPC",                           "Índice",
+  "puestos_trabajo",                      "Puestos de trabajo registrados IMSS (copia)",           "Millones"
+)
+
+
+kable(data_overview, caption = "Descripción general de los datos")%>%
+  kable_styling(latex_options="scale_down") %>%
+  kable_styling(latex_options = "HOLD_position")%>%
+  kable_styling(font_size = 7)
+
+```
+
+### Estadística descriptiva
+
+```{r}
+#| warning: false
+#| echo: false
+
+num_vars <- names(I)[sapply(I, is.numeric)] 
+  
+num_summary <- rbindlist(lapply(num_vars, function(var){
+  x <- I[[var]]
+    data.table(
+    Variable = var,
+    N = sum(!is.na(x)),
+    Mean = round(mean(x, na.rm = TRUE), 4),
+    SD = round(sd(x, na.rm = TRUE), 4),
+    Q1 = round(quantile(x, 0.25, na.rm = TRUE), 4),
+    Median = round(median(x, na.rm = TRUE), 4),
+    Q3 = round(quantile(x, 0.75, na.rm = TRUE), 4),
+    Min = min(x, na.rm = TRUE),
+    Max = max(x, na.rm = TRUE),
+    Missing = sum(is.na(x))
+  )
+}))
+
+nvars <- c("PE_Comercial", "PE_Automotriz", "PE_EFinancieras", "PE_Nomina", "PE_Personales", "PE_TC", "USD/MXN", "TIEF", "Remesas", "M1", "M2", "M3", "Balanza", "INPC", "IGOE", "IGAE", "G-Deuda", "G-Empleo", "IMSS", "IPC","S&P500")
+
+num_summary[, Variable := nvars]
+
+sci_vars <- c("M1", "M2", "M3", "BP", "Nacional", "IPC","S&P500")
+
+format_value <- function(x, use_sci = FALSE) {
+  if (use_sci) formatC(x, format = "e", digits = 2)
+  else formatC(x, format = "f", digits = 4)
+}
+
+for (col in setdiff(names(num_summary), c("Variable", "Missing", "N"))) {
+  num_summary[[col]] <- mapply(
+    format_value,
+    num_summary[[col]],
+    use_sci = num_summary$Variable %in% sci_vars
+  )
+}
+
+num_summary[, N := formatC(N, format = "d")]
+num_summary[, Missing := formatC(Missing, format = "d")]
+
+kable(num_summary, format = "latex", booktabs = TRUE, digits = 4, format.args = list(scientific = TRUE), caption = "Resumen estadístico de variables numéricas")%>%   kable_styling(latex_options="scale_down") %>%
+  kable_styling(latex_options = "HOLD_position")
+
+```
+
+### Exploración univariada
+
+```{r}
+#| warning: false
+#| echo: false
+
+vars_y <- I %>% select(contains("y")) %>% names()
+vars_rest <- I %>% select(-all_of(vars_y), -llave) %>% names()
+
+
+I_y <- I %>%
+  select(llave, contains("y_")) %>%
+  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
+
+I_rest <- I %>%
+  select(llave, !contains("y_")) %>%
+  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
+```
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+
+I_y %>%
+  ggplot(aes(x = llave, y = valor, group = 1)) +
+  geom_line(color = "steelblue", size = 1) +
+  facet_wrap(~ variable, scales = "free_y") +
+  scale_y_continuous(labels = percent_format(accuracy = 0.01)) +  # 2 decimales
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold", size = 8),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 10)
+  ) +
+  labs(
+    title = "Pérdida Esperada (PE, %)",
+    x = "Fecha",
+    y = NULL
+  )
+
+```
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+I_rest <- I_rest %>%
+  mutate(variable = case_when(
+    variable == "usd_mxn" ~ "USD/MXN (pesos por USD)",
+    variable == "tiie_fondeo" ~ "TIIE fondeo (%)",
+    variable == "remesas" ~ "Remesas (miles de millones MXN)",
+    variable == "m1" ~ "M1 (miles de millones MXN)",
+    variable == "m2" ~ "M2 (miles de millones MXN)",
+    variable == "m3" ~ "M3 (miles de millones MXN)",
+    variable == "balanza" ~ "Balanza comercial (miles de miles USD)",
+    variable == "inpc" ~ "INPC (2018=100)",
+    variable == "igoec" ~ "IGOEC (2018=100)",
+    variable == "igae" ~ "IGAE (2018=100)",
+    variable == "google_deuda" ~ "Google deuda (índice)",
+    variable == "google_empleo" ~ "Google empleo (índice)",
+    variable == "puestos_trabajo" ~ "Millones Puestos de trabajo (trabajadores)",
+    variable == "s_p_bmv_ipc" ~ "S&P/BMV IPC",
+    variable == "s_p_500" ~ "S&P 500 (índice)",
+    TRUE ~ variable
+  ))
+I_rest %>%
+  filter(variable %in% c(
+    "INPC (2018=100)",
+    "IGAE (2018=100)",
+    "IGOEC (2018=100)",
+    "Millones Puestos de trabajo (trabajadores)",
+    "Google empleo (índice)",
+    "Google deuda (índice)",
+    "Remesas (millones MXN)"
+  )) %>%
+  ggplot(aes(x = llave, y = valor, group = 1)) +
+  geom_line(color = "darkorange", size = 1) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+  scale_y_continuous(labels = label_number(accuracy = 0.1)) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    strip.text = element_text(face = "bold", size = 10),
+    plot.title = element_text(hjust = 0.5,  size = 10)
+  ) +
+  labs(
+    title = "Indicadores Macroeconómicos I – Precios, Actividad y Empleo (unidades)",
+    x = "Fecha",
+    y = NULL
+  )
+```
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+I_rest %>%
+  filter(variable %in% c(
+    "M1 (miles de millones MXN)",
+    "M2 (miles de millones MXN)",
+    "M3 (miles de millones MXN)",
+    "TIIE fondeo (%)",
+    "USD/MXN (pesos por USD)",
+    "S&P/BMV IPC",
+    "S&P 500 (índice)",
+    "Balanza comercial (miles de miles USD)"
+  )) %>%
+  ggplot(aes(x = llave, y = valor, group = 1)) +
+  geom_line(color = "darkorange", size = 1) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+  scale_y_continuous(labels = label_number(accuracy = 0.1)) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 10),
+    strip.text = element_text(face = "bold", size = 10),
+    plot.title = element_text(hjust = 0.5,  size = 10)
+  ) +
+  labs(
+    title = "Indicadores Macroeconómicos II – Dinero, Mercados y Tipo de Cambio (Unidades)",
+    x = "Fecha",
+    y = NULL
+  )
+```
+
+Los gráficos univariados revelan las dinámicas temporales que hay que tomar en cuenta antes de modelar las pérdidas crediticias esperadas. Los agregados monetarios (M1, M2, M3), la inflación (INPC) y el empleo (puestos de trabajo) muestran fuertes tendencias al alza, lo que sugiere un crecimiento a largo plazo y la necesidad de transformaciones como la diferenciación. Las tasas de interés (TIIE) y los tipos de cambio (USD/MXN) muestran un comportamiento cíclico alineado con los cambios recientes en la política monetaria, lo que podría tener efectos rezagados en el desempeño crediticio. Los indicadores del ciclo económico, como el IGAE y las variables de Google Trends, muestran fluctuaciones a corto plazo, lo que sugiere su potencial como predictores de alta frecuencia del estrés del prestatario.
+
+En cuanto a las variables de pérdida crediticia, éstas presentan comportamientos diversos según el tipo de producto. Mientras que segmentos como las tarjetas de crédito y la actividad empresarial muestran descensos constantes, posiblemente debido a mejoras en la calidad de la cartera, otros, como la nómina y el personal, revelan cambios estructurales o estancamientos, lo que sugiere posibles cambios de régimen o redefiniciones contables.
+
+### Matriz de correlación
+
+```{r}
+#| fig.asp: 0.8
+#| fig.width: 7
+library(corrplot)
+
+corr_data <- I %>%
+  select(-llave, -nacional) 
+
+corrplot(cor(corr_data), method = "color", type = "upper", tl.cex = 0.8)
+```
+
+La matriz de correlación revela fuertes relaciones entre los indicadores macrofinancieros y las tasas de pérdida esperadas en diferentes productos crediticios. La mayoría de las tasas de pérdida presentan una alta correlación positiva entre sí, lo que sugiere que factores macroeconómicos sistémicos influyen simultáneamente en múltiples segmentos crediticios. Destaca que la variable *Pérdida esperada - Crédito personal* muestra correlaciones bajas o incluso negativas con otras variables de pérdida, lo que indica que podría estar impulsado por dinámicas idiosincrásicas o no observadas. Las pérdidas crediticias también presentan una correlación negativa con los agregados monetarios (M1, M2, M3), el empleo y la inflación, lo que implica que una mayor actividad económica se asocia con un menor riesgo crediticio.
+
+Entre los predictores macroeconómicos, las tasas de interés muestran fuertes correlaciones negativas con todas las variables de pérdida crediticia por lo que tasas más altas coinciden con menores incumplimientos a corto plazo, lo que posiblemente refleja estándares de préstamo más estrictos o efectos de selección. Por el contrario, el tipo de cambio y las tendencias de búsqueda en Google presentan una correlación positiva con las pérdidas crediticias, lo que indica posibles señales de estrés. Estos hallazgos resaltan la importancia del contexto macroeconómico en la modelización del riesgo crediticio.
+
+```{r}
+# library(GGally)
+# GGally::ggcorr(corr_data[, c(1:6, 7:ncol(corr_data))], label = TRUE)
+```
+
+## Pruebas de estacionariedad
+
+### Prueba de Raíz Unitaria de Dickey & Fuller
+
+La prueba de Dickey-Fuller Aumentada (DFA) se usa para detectar estadísticamente la presencia de conducta tendencial estocástica en las series temporales de las variables mediante un contraste de hipótesis. En nuestro caso, se utilizó la prueba DFA para evaluar la presencia de raíz unitaria en las series temporales de nuestra base de datos. Los resultados indican que, en su mayoría, las series analizadas requieren una transformación mediante primeras diferencias para alcanzar la estacionariedad.
+
+Una serie de tiempo debe ser estacionaria para que los modelos econométricos puedan aplicarse correctamente. Si una serie no es estacionaria, sus propiedades estadísticas ---como la media, la varianza y la covarianza--- cambian con el tiempo, lo cual invalida los supuestos fundamentales de los modelos clásicos. Esto impide usar procedimientos estándar de inferencia estadística y genera relaciones engañosas entre las variables. Como afirma Walter Enders:
+
+> ⁠"If a time series is nonstationary, it is not possible to model it in terms of a finite number of parameters that summarize its behavior over time. The reason is that the process generating the series is not stable over time. Consequently, any coefficients obtained from fitting a model to the data are not likely to be constant over time" ⁠--- Walter Enders, Applied Econometric Time Series, 4th edition, Chapter 2.3, p. 50 .
+
+Esto significa que los coeficientes estimados pueden no ser válidos en otros periodos, los errores se acumulan y las predicciones pierden validez. Por ello, es indispensable asegurar que las series sean estacionarias antes de modelarlas.
+
+```{r}
+#| warning: false
+#| echo: false
+
+master_base <-read_excel(
+  glue::glue("master_base_filtrado.xlsx"),
+)%>%janitor::clean_names() 
+
+master_base <- master_base%>%
+  mutate(
+    m1 = m1 / (10^6),
+    m2 = m2 / (10^6),
+    m3 = m3 / (10^6),
+    balanza = balanza / (10^6),
+    remesas = remesas / (10^3),
+    puestos_trabajo = nacional / (10^6),
+    tiie_fondeo = tiie_fondeo / 100
+  )
+XV <- master_base %>% mutate(llave = ym(llave)) %>% arrange(llave)
+variables_numericas <- XV %>% select(-fecha, -llave) %>% select(where(is.numeric)) %>% names()
+
+
+evaluar_adf_tseries <- function(x, nombre) {
+  x <- na.omit(x)
+  if (length(x) < 20 || sd(x) < 1e-6 || length(unique(x)) < 5) {
+    return(tibble(variable = nombre, adf_stat = NA, adf_pvalue = NA, estacionaria = FALSE, usable = "NO"))
+  }
+  test <- tryCatch(adf.test(x, k = 0), error = function(e) NULL)
+  if (is.null(test)) {
+    return(tibble(variable = nombre, adf_stat = NA, adf_pvalue = NA, estacionaria = FALSE, usable = "NO"))
+  }
+  stat <- test$statistic
+  pval <- test$p.value
+  estacionaria <- pval < 0.05
+  usable <- ifelse(estacionaria, "OK", "NO")
+  tibble(variable = nombre, adf_stat = stat, adf_pvalue = pval, estacionaria = estacionaria, usable = usable)
+}
+
+
+resultados_adf_original <- map_dfr(variables_numericas, ~ evaluar_adf_tseries(XV[[.x]], .x))
+
+resultados_adf_original %>%
+  arrange(usable, desc(estacionaria), adf_pvalue) %>%
+  gt() %>%
+  gt_theme_538(quiet = TRUE) %>%
+  tab_header(
+    title = "Resultados del Test ADF por Variable",
+    subtitle = "Evaluación de Estacionariedad con tseries::adf.test (k = 0)"
+  ) %>%
+  fmt_number(columns = c(adf_stat, adf_pvalue), decimals = 3) %>%
+  data_color(
+    columns = adf_pvalue,
+    colors = scales::col_numeric(
+      palette = c("green", "yellow", "red"),
+      domain = c(0, 1)
+    )
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightgreen"),
+    locations = cells_body(columns = usable, rows = usable == "OK")
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightpink"),
+    locations = cells_body(columns = usable, rows = usable == "NO")
+  )
+```
+
+```{r}
+#| warning: false
+#| echo: false
+
+XVI <- XV %>%
+  mutate(across(all_of(variables_numericas), ~ .x - lag(.x), .names = "diff_{.col}"))
+
+variables_diff <- paste0("diff_", variables_numericas)
+
+resultados_adf_diff <- map_dfr(variables_diff, ~ evaluar_adf_tseries(XVI[[.x]], .x))
+
+
+# Tabla chula para primeras diferencias con más decimales
+resultados_adf_diff %>%
+  arrange(usable, desc(estacionaria), adf_pvalue) %>%
+  gt() %>%
+  gt_theme_538() %>%
+  tab_header(
+    title = "Resultados del Test ADF – Primeras Diferencias",
+    subtitle = "Evaluación de Estacionariedad con tseries::adf.test (k = 0)"
+  ) %>%
+  fmt_number(columns = c(adf_stat, adf_pvalue), decimals = 5) %>%
+  data_color(
+    columns = adf_pvalue,
+    colors = scales::col_numeric(
+      palette = c("green", "yellow", "red"),
+      domain = c(0, 1)
+    )
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightgreen"),
+    locations = cells_body(columns = usable, rows = usable == "OK")
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightpink"),
+    locations = cells_body(columns = usable, rows = usable == "NO")
+  )
+
+```
+
+```{r}
+#| warning: false
+#| echo: false
+
+vars_y <- I %>% select(contains("y")) %>% names()
+vars_rest <- I %>% select(-all_of(vars_y), -llave) %>% names()
+
+
+I_y <- I %>%
+  select(llave, contains("y_")) %>%
+  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
+
+I_rest <- I %>%
+  select(llave, !contains("y_")) %>%
+  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
+
+```
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+
+# I_y %>%
+#   ggplot(aes(x = llave, y = valor, group = 1)) +
+#   geom_line(color = "steelblue", size = 1) +
+#   facet_wrap(~ variable, scales = "free_y") +
+#   scale_y_continuous(labels = percent_format(accuracy = 0.01)) +  # 2 decimales
+#   theme_minimal(base_size = 14) +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     strip.text = element_text(face = "bold", size = 8),
+#     plot.title = element_text(hjust = 0.5, face = "bold", size = 10)
+#   ) +
+#   labs(
+#     title = "Pérdida Esperada (PE, %)",
+#     x = "Fecha",
+#     y = NULL
+#   )
+
+
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| fig-asp: 0.8
+#| fig-width: 7
+# I_rest <- I_rest %>%
+#   mutate(variable = case_when(
+#     variable == "usd_mxn" ~ "USD/MXN (pesos por USD)",
+#     variable == "tiie_fondeo" ~ "TIIE fondeo (%)",
+#     variable == "remesas" ~ "Remesas (miles de millones MXN)",
+#     variable == "m1" ~ "M1 (miles de millones MXN)",
+#     variable == "m2" ~ "M2 (miles de millones MXN)",
+#     variable == "m3" ~ "M3 (miles de millones MXN)",
+#     variable == "balanza" ~ "Balanza comercial (miles de miles USD)",
+#     variable == "inpc" ~ "INPC (2018=100)",
+#     variable == "igoec" ~ "IGOEC (2018=100)",
+#     variable == "igae" ~ "IGAE (2018=100)",
+#     variable == "google_deuda" ~ "Google deuda (índice)",
+#     variable == "google_empleo" ~ "Google empleo (índice)",
+#     variable == "puestos_trabajo" ~ "Millones Puestos de trabajo (trabajadores)",
+#     variable == "s_p_bmv_ipc" ~ "S&P/BMV IPC",
+#     variable == "s_p_500" ~ "S&P 500 (índice)",
+#     TRUE ~ variable
+#   ))
+# I_rest %>%
+#   filter(variable %in% c(
+#     "INPC (2018=100)",
+#     "IGAE (2018=100)",
+#     "IGOEC (2018=100)",
+#     "Millones Puestos de trabajo (trabajadores)",
+#     "Google empleo (índice)",
+#     "Google deuda (índice)",
+#     "Remesas (millones MXN)"
+#   )) %>%
+#   ggplot(aes(x = llave, y = valor, group = 1)) +
+#   geom_line(color = "darkorange", size = 1) +
+#   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+#   scale_y_continuous(labels = label_number(accuracy = 0.1)) +
+#   theme_minimal(base_size = 13) +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     axis.text.y = element_text(size = 10),
+#     strip.text = element_text(face = "bold", size = 10),
+#     plot.title = element_text(hjust = 0.5,  size = 10)
+#   ) +
+#   labs(
+#     title = "Indicadores Macroeconómicos I – Precios, Actividad y Empleo (unidades)",
+#     x = "Fecha",
+#     y = NULL
+#   )
+
+```
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+# I_rest %>%
+#   filter(variable %in% c(
+#     "M1 (miles de millones MXN)",
+#     "M2 (miles de millones MXN)",
+#     "M3 (miles de millones MXN)",
+#     "TIIE fondeo (%)",
+#     "USD/MXN (pesos por USD)",
+#     "S&P/BMV IPC",
+#     "S&P 500 (índice)",
+#     "Balanza comercial (miles de miles USD)"
+#   )) %>%
+#   ggplot(aes(x = llave, y = valor, group = 1)) +
+#   geom_line(color = "darkorange", size = 1) +
+#   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+#   scale_y_continuous(labels = label_number(accuracy = 0.1)) +
+#   theme_minimal(base_size = 13) +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     axis.text.y = element_text(size = 10),
+#     strip.text = element_text(face = "bold", size = 10),
+#     plot.title = element_text(hjust = 0.5,  size = 10)
+#   ) +
+#   labs(
+#     title = "Indicadores Macroeconómicos II – Dinero, Mercados y Tipo de Cambio (Unidades)",
+#     x = "Fecha",
+#     y = NULL
+#   )
+
+```
+
+Tras aplicar la transformación de primeras diferencias a todas las series temporales, se comprobó mediante el Test ADF que las series transformadas cumplen con el criterio de estacionariedad (p-valor \< 0.05 en todos los casos). Por tanto, las primeras diferencias de las variables pueden utilizarse de forma adecuada en los modelos de predicción.
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+
+# Calcular primeras diferencias
+II <- I %>%
+  mutate(across(-llave, ~ .x - lag(.x), .names = "diff_{.col}"))
+
+# Seleccionar solo las primeras diferencias
+III <- II %>% select(llave, starts_with("diff_"))
+
+# Separar variables con "y" y el resto
+vars_y <- III %>% select(contains("y")) %>% names()
+vars_rest <- III %>% select(-all_of(vars_y), -llave) %>% names()
+
+# Pivotear largo para variables con "y"
+III_y <- III %>%
+  select(llave, all_of(vars_y)) %>%
+  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
+
+# Pivotear largo para el resto
+III_rest <- III %>%
+  select(llave, all_of(vars_rest)) %>%
+  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
+
+
+# Mejorar etiquetas de variables con "y"
+III_y <- III_y %>%
+  mutate(variable = case_when(
+    variable == "diff_y_pe" ~ "Δ PE (%)",
+    variable == "diff_y_provisiones" ~ "Δ Provisiones (%)",
+    variable == "diff_y_mora" ~ "Δ Mora (%)",
+    TRUE ~ gsub("diff_", "Δ ", variable)
+  ))
+
+# Mejorar etiquetas del resto
+III_rest <- III_rest %>%
+  mutate(variable = case_when(
+    variable == "diff_usd_mxn" ~ "Δ USD/MXN",
+    variable == "diff_tiie_fondeo" ~ "Δ TIIE fondeo (p.p.)",
+    variable == "diff_remesas" ~ "Δ Remesas (miles de millones MXN)",
+    variable == "diff_m1" ~ "Δ M1 (miles de millones MXN)",
+    variable == "diff_m2" ~ "Δ M2 (miles de millones MXN)",
+    variable == "diff_m3" ~ "Δ M3 (miles de millones MXN)",
+    variable == "diff_balanza" ~ "Δ Balanza (miles de miles USD)",
+    variable == "diff_inpc" ~ "Δ INPC (2018=100)",
+    variable == "diff_igoec" ~ "Δ IGOEC (2018=100)",
+    variable == "diff_igae" ~ "Δ IGAE (2018=100)",
+    variable == "diff_google_deuda" ~ "Δ Google deuda (índice)",
+    variable == "diff_google_empleo" ~ "Δ Google empleo (índice)",
+    variable == "diff_puestos_trabajo" ~ "Δ millones Puestos trabajo",
+    variable == "diff_s_p_bmv_ipc" ~ "Δ S&P/BMV IPC",
+    variable == "diff_s_p_500" ~ "Δ S&P 500",
+    TRUE ~ gsub("diff_", "Δ ", variable)
+  ))
+
+III_y %>%
+  ggplot(aes(x = llave, y = valor)) +
+  geom_line(color = "steelblue", size = 1) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+  ) +
+  labs(
+    title = "Primeras diferencias: Series con 'y'",
+    x = "Fecha",
+    y = ""
+  )
+
+```
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+
+# Gráfico primeras diferencias: resto de series
+III_rest <- III_rest %>%
+  mutate(variable = case_when(
+    variable == "diff_usd_mxn" ~ "Δ USD/MXN (pesos por USD)",
+    variable == "diff_tiie_fondeo" ~ "Δ TIIE fondeo (p.p.)",
+    variable == "diff_remesas" ~ "Δ Remesas (miles de millones MXN)",
+    variable == "diff_m1" ~ "Δ M1 (miles de millones MXN)",
+    variable == "diff_m2" ~ "Δ M2 (miles de millones MXN)",
+    variable == "diff_m3" ~ "Δ M3 (miles de millones MXN)",
+    variable == "diff_balanza" ~ "Δ Balanza comercial (miles de miles USD)",
+    variable == "diff_inpc" ~ "Δ INPC (2018=100)",
+    variable == "diff_igoec" ~ "Δ IGOEC (2018=100)",
+    variable == "diff_igae" ~ "Δ IGAE (2018=100)",
+    variable == "diff_google_deuda" ~ "Δ Google deuda (índice)",
+    variable == "diff_google_empleo" ~ "Δ Google empleo (índice)",
+    variable == "diff_puestos_trabajo" ~ "Δ millones Puestos de trabajo",
+    variable == "diff_s_p_bmv_ipc" ~ "Δ S&P/BMV IPC",
+    variable == "diff_s_p_500" ~ "Δ S&P 500 (índice)",
+    TRUE ~ gsub("diff_", "Δ ", variable)
+  ))
+
+III_rest %>%
+  filter(variable %in% c(
+    "Δ INPC (2018=100)",
+    "Δ IGAE (2018=100)",
+    "Δ IGOEC (2018=100)",
+    "Δ millones Puestos de trabajo",
+    "Δ Google empleo (índice)",
+    "Δ Remesas (miles de millones MXN)"
+  )) %>%
+  ggplot(aes(x = llave, y = valor)) +
+  geom_line(color = "darkorange", size = 1) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    title = "Indicadores Macro – Grupo 1 (1 diferencia)",
+    x = "Fecha",
+    y = NULL
+  )
+
+
+```
+
+```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
+III_rest %>%
+  filter(variable %in% c(
+    "Δ M1 (miles de millones MXN)",
+    "Δ M2 (miles de millones MXN)",
+    "Δ M3 (miles de millones MXN)",
+    "Δ USD/MXN (miles de pesos por USD)",
+    "Δ TIIE fondeo (p.p.)",
+    "Δ S&P/BMV IPC",
+    "Δ S&P 500 (índice)",
+    "Δ Balanza comercial (miles USD)"
+  )) %>%
+  ggplot(aes(x = llave, y = valor)) +
+  geom_line(color = "darkorange", size = 1) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+  theme_minimal(base_size = 13) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  ) +
+  labs(
+    title = "Indicadores Macro – Grupo 2 (1 diferencia)",
+    x = "Fecha",
+    y = NULL
+  )
+
+```
+
+## Modelado (siguientes pasos)
+
+Para el análisis de nuestras variables, planeamos hacer la comparación entre los siguientes modelos:
+
+1.  **ARIMA**
+    -   Objetivo: Modelar y predecir la dinámica interna de una sola serie temporal de pérdida esperada, sirviendo como línea base clásica.
+
+    -   Ventajas: Capta patrones autorregresivos, tendencias y ciclos; es ampliamente aceptado y fácil de interpretar.
+
+    -   Consideraciones: La serie debe ser estacionaria; seleccionar correctamente los parámetros (p, d, q); revisar residuos.
+2.  **SARIMA**
+    -   Objetivo: Incorporar patrones estacionales en series de tiempo, útil si las pérdidas presentan estacionalidad o ciclos repetitivos.
+
+    -   Ventajas: Captura tanto dinámica general como efectos estacionales; permite predecir en presencia de ciclos regulares.
+
+    -   Consideraciones: Identificar y ajustar adecuadamente componentes estacionales (P, D, Q, s); asegurar estacionariedad.
+3.  **XGBoosting**
+    -   Objetivo: Detectar patrones complejos y no lineales en el riesgo crediticio, integrando variables macroeconómicas, financieras y alternativas (como Google Trends).
+
+    -   Ventajas: Alta precisión, maneja grandes volúmenes de datos, robusto a variables irrelevantes y permite interpretar importancia de variables.
+
+    -   Consideraciones: Evitar fuga de información temporal ( data leakage), usar variables rezagadas, validar con divisiones temporales adecuadas (walk-forward).
