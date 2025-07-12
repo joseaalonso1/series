@@ -1,0 +1,8 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.html
+*.nb.html
+*.DS_Store
+_quarto_cache/
