@@ -78,7 +78,7 @@ Para la elaboración de la base de datos final, primero se procedió con el arma
 ```{r}
 rm(list = ls())
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras,vars,zoo )
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras,zoo )
 
 
 ```
@@ -797,22 +797,46 @@ Para el análisis de nuestras variables, planeamos hacer la comparación entre l
 VAR
 
 ```{r}
+#| warning: false
+#| echo: false
+#| fig.asp: 0.8
+#| fig.width: 7
 
+library(vars)
 
-# Supongamos que df_diff ya tiene las primeras diferencias y 'llave' es as.yearmon
-# Y que predicciones ya fue generado con predict(modelo_var)
+# Asegurar formato de fecha mensual
+mb <- master_base %>%
+  mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
+  arrange(llave)
 
-# Horizonte
+# Definir variables dependientes (solo las que inician con "y_")
+dep_vars <- names(mb)[startsWith(names(mb), "y_")]
+
+df_diff <- mb %>%
+  dplyr::select(llave, all_of(dep_vars)) %>%
+  arrange(llave) %>%
+  mutate(across(all_of(dep_vars), ~ . - lag(.))) %>%
+  slice(-1)  # elimina solo la primera fila con NAs por lag
+
+# Verificación mínima de observaciones para p=4
+if (nrow(df_diff) < 5) stop("No hay suficientes observaciones para ajustar un VAR con p = 4.")
+
+# Modelo VAR solo con variables y_
+Y_var <- df_diff %>% dplyr::select(-llave)
+modelo_var <- VAR(Y_var, p = 4, type = "const")
+
+# Generar predicciones h pasos adelante
 h <- 5
+predicciones <- predict(modelo_var, n.ahead = h)
 
-# Fechas futuras
+# Crear secuencia de fechas futuras
 fechas_futuras <- seq(max(df_diff$llave) + 1/12, by = 1/12, length.out = h)
 
-# Obtener último valor real por variable
-ultimo_real <- df_diff %>% 
-  filter(llave == max(llave)) %>% 
-  dplyr::select(-llave) %>% 
-  unlist() %>% 
+# Último valor observado de cada variable
+ultimo_real <- df_diff %>%
+  filter(llave == max(llave)) %>%
+  dplyr::select(-llave) %>%
+  unlist() %>%
   as.numeric()
 
 # Crear fila inicial con último valor real
@@ -821,24 +845,23 @@ colnames(inicio_forecast) <- names(predicciones$fcst)
 inicio_forecast[1, ] <- ultimo_real
 inicio_forecast$llave <- max(df_diff$llave)
 
-# Crear predicciones dataframe
+# Crear dataframe de predicciones
 pred_df <- data.frame(fechas_futuras)
 for (var in names(predicciones$fcst)) {
   pred_df[[var]] <- predicciones$fcst[[var]][, "fcst"]
 }
-pred_df <- pred_df %>%
-  rename(llave = fechas_futuras)
+pred_df <- pred_df %>% rename(llave = fechas_futuras)
 
-# Unir el último punto real al inicio de las predicciones
+# Añadir punto real al inicio
 pred_df <- bind_rows(inicio_forecast, pred_df)
 
-# Formato largo
+# Formato largo para predicciones
 df_pred_long <- pred_df %>%
   pivot_longer(-llave, names_to = "variable", values_to = "forecast")
 
-# Datos reales recientes
+# Datos reales recientes (para graficar comparación)
 df_real_long <- df_diff %>%
-  filter(llave >= (max(df_diff$llave) - (h + 2) / 12)) %>%
+  filter(llave >= (max(llave) - (h + 2)/12)) %>%
   pivot_longer(-llave, names_to = "variable", values_to = "real")
 
 # Unir reales y pronósticos
@@ -848,7 +871,7 @@ df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %
     forecast_bps = forecast * 10000
   )
 
-# Gráfica final
+# Gráfico final
 ggplot(df_final, aes(x = llave)) +
   geom_line(aes(y = real_bps, color = "Real")) +
   geom_line(aes(y = forecast_bps, color = "Forecast"), linetype = "dashed") +
