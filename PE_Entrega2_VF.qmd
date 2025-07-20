@@ -78,15 +78,11 @@ Para la elaboración de la base de datos final, primero se procedió con el arma
 ```{r}
 rm(list = ls())
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras,zoo )
-
-
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics, vars)
 ```
 
 ```{r}
-#| warning: false
-#| echo: false
-
+# Carga de datos
 I <- read_excel(
   glue::glue("master_base_filtrado.xlsx"),
 )%>%janitor::clean_names() 
@@ -102,7 +98,7 @@ I <- I %>%
     tiie_fondeo = tiie_fondeo / 100
   )
 
-I <- I %>% select(-fecha) %>% 
+I <- I %>% dplyr::select(-fecha) %>% 
   mutate(across(-llave, ~ str_trim(as.character(.x)))) %>% 
   mutate(across(-llave, as.numeric))%>% mutate(llave = ym(llave)) 
 ```
@@ -110,10 +106,7 @@ I <- I %>% select(-fecha) %>%
 ### Descripción general de los datos
 
 ```{r}
-library(tibble)
-library(knitr)
-
-# Table 1: Data Overview (without 'Type' column)
+# Tabla 1
 data_overview <- tribble(
   ~Variable,                              ~Descripción,                                           ~Unidades,
   "llave",                                "Fecha de observación (mensual)",                        "YYYY-MM-DD",
@@ -151,9 +144,6 @@ kable(data_overview, caption = "Descripción general de los datos")%>%
 ### Estadística descriptiva
 
 ```{r}
-#| warning: false
-#| echo: false
-
 num_vars <- names(I)[sapply(I, is.numeric)] 
   
 num_summary <- rbindlist(lapply(num_vars, function(var){
@@ -176,53 +166,39 @@ nvars <- c("PE_Comercial", "PE_Automotriz", "PE_EFinancieras", "PE_Nomina", "PE_
 
 num_summary[, Variable := nvars]
 
-sci_vars <- c("M1", "M2", "M3", "BP", "Nacional", "IPC","S&P500")
-
-format_value <- function(x, use_sci = FALSE) {
-  if (use_sci) formatC(x, format = "e", digits = 2)
-  else formatC(x, format = "f", digits = 4)
-}
-
-for (col in setdiff(names(num_summary), c("Variable", "Missing", "N"))) {
-  num_summary[[col]] <- mapply(
-    format_value,
-    num_summary[[col]],
-    use_sci = num_summary$Variable %in% sci_vars
-  )
-}
-
-num_summary[, N := formatC(N, format = "d")]
-num_summary[, Missing := formatC(Missing, format = "d")]
-
-kable(num_summary, format = "latex", booktabs = TRUE, digits = 4, format.args = list(scientific = TRUE), caption = "Resumen estadístico de variables numéricas")%>%   kable_styling(latex_options="scale_down") %>%
+kable(num_summary, format = "latex", booktabs = TRUE, digits = 4, format.args = list(scientific = FALSE), caption = "Resumen estadístico de variables numéricas")%>%   kable_styling(latex_options="scale_down") %>%
   kable_styling(latex_options = "HOLD_position")
-
 ```
 
 ### Exploración univariada
 
 ```{r}
-#| warning: false
-#| echo: false
-
-vars_y <- I %>% select(contains("y")) %>% names()
-vars_rest <- I %>% select(-all_of(vars_y), -llave) %>% names()
-
+vars_y <- I %>% dplyr::select(contains("y")) %>% names()
+vars_rest <- I %>% dplyr::select(-all_of(vars_y), -llave) %>% names()
 
 I_y <- I %>%
-  select(llave, contains("y_")) %>%
+  dplyr::select(llave, contains("y_")) %>%
   pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
 
 I_rest <- I %>%
-  select(llave, !contains("y_")) %>%
+  dplyr::select(llave, !contains("y_")) %>%
   pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
 ```
 
 ```{r}
-#| warning: false
-#| echo: false
 #| fig.asp: 0.8
 #| fig.width: 7
+
+I_y <- I_y %>%
+  mutate(variable = case_when(
+    variable == "y_pe_actividad_empresarial_o_comercial" ~ "PE Comercial",
+    variable == "y_pe_automotriz" ~ "PE Automotriz",
+    variable == "y_pe_entidades_financieras" ~ "PE Entidades financieras",
+    variable == "y_pe_nomina" ~ "PE Nómina",
+    variable == "y_pe_personales" ~ "PE Personal",
+    variable == "y_pe_tarjeta_de_credito" ~ "PE Tarjeta de crédito",
+    TRUE ~ variable
+  ))
 
 I_y %>%
   ggplot(aes(x = llave, y = valor, group = 1)) +
@@ -240,14 +216,12 @@ I_y %>%
     x = "Fecha",
     y = NULL
   )
-
 ```
 
 ```{r}
-#| warning: false
-#| echo: false
 #| fig.asp: 0.8
 #| fig.width: 7
+
 I_rest <- I_rest %>%
   mutate(variable = case_when(
     variable == "usd_mxn" ~ "USD/MXN (pesos por USD)",
@@ -296,10 +270,9 @@ I_rest %>%
 ```
 
 ```{r}
-#| warning: false
-#| echo: false
 #| fig.asp: 0.8
 #| fig.width: 7
+
 I_rest %>%
   filter(variable %in% c(
     "M1 (miles de millones MXN)",
@@ -338,10 +311,36 @@ En cuanto a las variables de pérdida crediticia, éstas presentan comportamient
 ```{r}
 #| fig.asp: 0.8
 #| fig.width: 7
-library(corrplot)
 
-corr_data <- I %>%
-  select(-llave, -puestos_trabajo) 
+new_names <- c(
+  y_pe_actividad_empresarial_o_comercial = "PE Comercial",
+  y_pe_automotriz                     = "PE Automotriz",
+  y_pe_entidades_financieras          = "PE Entidades financieras",
+  y_pe_nomina                         = "PE Nómina",
+  y_pe_personales                     = "PE Personal",
+  y_pe_tarjeta_de_credito             = "PE Tarjeta de crédito",
+  usd_mxn                             = "USD/MXN",
+  tiie_fondeo                         = "TIIE fondeo",
+  remesas                             = "Remesas",
+  m1                                  = "M1",
+  m2                                  = "M2",
+  m3                                  = "M3",
+  balanza                             = "Balanza comercial",
+  inpc                                = "INPC",
+  igoec                               = "IGOEC",
+  igae                                = "IGAE",
+  google_deuda                        = "Google deuda",
+  google_empleo                       = "Google empleo",
+  puestos_trabajo                     = "Puestos de trabajo",
+  s_p_bmv_ipc                         = "S&P/BMV IPC",
+  s_p_500                             = "S&P 500"
+)
+
+I_renamed <- I %>%
+  rename_with(~ new_names[.x], .cols = names(new_names))
+
+corr_data <- I_renamed %>%
+  dplyr::select(-llave) 
 
 corrplot(cor(corr_data), method = "color", type = "upper", tl.cex = 0.8)
 ```
@@ -349,11 +348,6 @@ corrplot(cor(corr_data), method = "color", type = "upper", tl.cex = 0.8)
 La matriz de correlación revela fuertes relaciones entre los indicadores macrofinancieros y las tasas de pérdida esperadas en diferentes productos crediticios. La mayoría de las tasas de pérdida presentan una alta correlación positiva entre sí, lo que sugiere que factores macroeconómicos sistémicos influyen simultáneamente en múltiples segmentos crediticios. Destaca que la variable *Pérdida esperada - Crédito personal* muestra correlaciones bajas o incluso negativas con otras variables de pérdida, lo que indica que podría estar impulsado por dinámicas idiosincrásicas o no observadas. Las pérdidas crediticias también presentan una correlación negativa con los agregados monetarios (M1, M2, M3), el empleo y la inflación, lo que implica que una mayor actividad económica se asocia con un menor riesgo crediticio.
 
 Entre los predictores macroeconómicos, las tasas de interés muestran fuertes correlaciones negativas con todas las variables de pérdida crediticia por lo que tasas más altas coinciden con menores incumplimientos a corto plazo, lo que posiblemente refleja estándares de préstamo más estrictos o efectos de selección. Por el contrario, el tipo de cambio y las tendencias de búsqueda en Google presentan una correlación positiva con las pérdidas crediticias, lo que indica posibles señales de estrés. Estos hallazgos resaltan la importancia del contexto macroeconómico en la modelización del riesgo crediticio.
-
-```{r}
-# library(GGally)
-# GGally::ggcorr(corr_data[, c(1:6, 7:ncol(corr_data))], label = TRUE)
-```
 
 ## Pruebas de estacionariedad
 
@@ -368,30 +362,10 @@ Una serie de tiempo debe ser estacionaria para que los modelos econométricos pu
 Esto significa que los coeficientes estimados pueden no ser válidos en otros periodos, los errores se acumulan y las predicciones pierden validez. Por ello, es indispensable asegurar que las series sean estacionarias antes de modelarlas.
 
 ```{r}
-#| warning: false
-#| echo: false
+# Cambie master_base por I base cargada desde el principio
+XV <- I_renamed %>% mutate(llave = ymd(llave)) %>% arrange(llave)
 
-master_base <-read_excel(
-  glue::glue("master_base_filtrado.xlsx"),
-)%>%janitor::clean_names() 
-
-master_base <- master_base%>%
-  mutate(
-    m1 = m1 / (10^6),
-    m2 = m2 / (10^6),
-    m3 = m3 / (10^6),
-    balanza = balanza / (10^6),
-    remesas = remesas / (10^3),
-    puestos_trabajo = puestos_trabajo / (10^6),
-    tiie_fondeo = tiie_fondeo / 100
-  )
-master_base <- master_base %>%
-  mutate(
-    igoec = as.numeric(gsub(",", ".", trimws(as.character(igoec))))
-  )
-XV <- master_base %>% mutate(llave = ym(llave)) %>% arrange(llave)
-variables_numericas <- XV %>% select(-fecha, -llave) %>% select(where(is.numeric)) %>% names()
-
+variables_numericas <- XV %>% dplyr::select(-llave) %>% dplyr::select(where(is.numeric)) %>% names()
 
 evaluar_adf_tseries <- function(x, nombre) {
   x <- na.omit(x)
@@ -409,9 +383,9 @@ evaluar_adf_tseries <- function(x, nombre) {
   tibble(variable = nombre, adf_stat = stat, adf_pvalue = pval, estacionaria = estacionaria, usable = usable)
 }
 
-
 resultados_adf_original <- map_dfr(variables_numericas, ~ evaluar_adf_tseries(XV[[.x]], .x))
 
+#Tabla 3
 resultados_adf_original %>%
   arrange(usable, desc(estacionaria), adf_pvalue) %>%
   gt() %>%
@@ -439,9 +413,6 @@ resultados_adf_original %>%
 ```
 
 ```{r}
-#| warning: false
-#| echo: false
-
 XVI <- XV %>%
   mutate(across(all_of(variables_numericas), ~ .x - lag(.x), .names = "diff_{.col}"))
 
@@ -449,8 +420,7 @@ variables_diff <- paste0("diff_", variables_numericas)
 
 resultados_adf_diff <- map_dfr(variables_diff, ~ evaluar_adf_tseries(XVI[[.x]], .x))
 
-
-# Tabla chula para primeras diferencias con más decimales
+# Tabla 4
 resultados_adf_diff %>%
   arrange(usable, desc(estacionaria), adf_pvalue) %>%
   gt() %>%
@@ -475,182 +445,70 @@ resultados_adf_diff %>%
     style = cell_fill(color = "lightpink"),
     locations = cells_body(columns = usable, rows = usable == "NO")
   )
-
-```
-
-```{r}
-#| warning: false
-#| echo: false
-
-vars_y <- I %>% select(contains("y")) %>% names()
-vars_rest <- I %>% select(-all_of(vars_y), -llave) %>% names()
-
-
-I_y <- I %>%
-  select(llave, contains("y_")) %>%
-  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
-
-I_rest <- I %>%
-  select(llave, !contains("y_")) %>%
-  pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
-
-```
-
-```{r}
-#| warning: false
-#| echo: false
-#| fig.asp: 0.8
-#| fig.width: 7
-
-# I_y %>%
-#   ggplot(aes(x = llave, y = valor, group = 1)) +
-#   geom_line(color = "steelblue", size = 1) +
-#   facet_wrap(~ variable, scales = "free_y") +
-#   scale_y_continuous(labels = percent_format(accuracy = 0.01)) +  # 2 decimales
-#   theme_minimal(base_size = 14) +
-#   theme(
-#     axis.text.x = element_text(angle = 45, hjust = 1),
-#     strip.text = element_text(face = "bold", size = 8),
-#     plot.title = element_text(hjust = 0.5, face = "bold", size = 10)
-#   ) +
-#   labs(
-#     title = "Pérdida Esperada (PE, %)",
-#     x = "Fecha",
-#     y = NULL
-#   )
-
-
-```
-
-```{r}
-#| echo: false
-#| warning: false
-#| fig-asp: 0.8
-#| fig-width: 7
-# I_rest <- I_rest %>%
-#   mutate(variable = case_when(
-#     variable == "usd_mxn" ~ "USD/MXN (pesos por USD)",
-#     variable == "tiie_fondeo" ~ "TIIE fondeo (%)",
-#     variable == "remesas" ~ "Remesas (miles de millones MXN)",
-#     variable == "m1" ~ "M1 (miles de millones MXN)",
-#     variable == "m2" ~ "M2 (miles de millones MXN)",
-#     variable == "m3" ~ "M3 (miles de millones MXN)",
-#     variable == "balanza" ~ "Balanza comercial (miles de miles USD)",
-#     variable == "inpc" ~ "INPC (2018=100)",
-#     variable == "igoec" ~ "IGOEC (2018=100)",
-#     variable == "igae" ~ "IGAE (2018=100)",
-#     variable == "google_deuda" ~ "Google deuda (índice)",
-#     variable == "google_empleo" ~ "Google empleo (índice)",
-#     variable == "puestos_trabajo" ~ "Millones Puestos de trabajo (trabajadores)",
-#     variable == "s_p_bmv_ipc" ~ "S&P/BMV IPC",
-#     variable == "s_p_500" ~ "S&P 500 (índice)",
-#     TRUE ~ variable
-#   ))
-# I_rest %>%
-#   filter(variable %in% c(
-#     "INPC (2018=100)",
-#     "IGAE (2018=100)",
-#     "IGOEC (2018=100)",
-#     "Millones Puestos de trabajo (trabajadores)",
-#     "Google empleo (índice)",
-#     "Google deuda (índice)",
-#     "Remesas (millones MXN)"
-#   )) %>%
-#   ggplot(aes(x = llave, y = valor, group = 1)) +
-#   geom_line(color = "darkorange", size = 1) +
-#   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
-#   scale_y_continuous(labels = label_number(accuracy = 0.1)) +
-#   theme_minimal(base_size = 13) +
-#   theme(
-#     axis.text.x = element_text(angle = 45, hjust = 1),
-#     axis.text.y = element_text(size = 10),
-#     strip.text = element_text(face = "bold", size = 10),
-#     plot.title = element_text(hjust = 0.5,  size = 10)
-#   ) +
-#   labs(
-#     title = "Indicadores Macroeconómicos I – Precios, Actividad y Empleo (unidades)",
-#     x = "Fecha",
-#     y = NULL
-#   )
-
-```
-
-```{r}
-#| warning: false
-#| echo: false
-#| fig.asp: 0.8
-#| fig.width: 7
-# I_rest %>%
-#   filter(variable %in% c(
-#     "M1 (miles de millones MXN)",
-#     "M2 (miles de millones MXN)",
-#     "M3 (miles de millones MXN)",
-#     "TIIE fondeo (%)",
-#     "USD/MXN (pesos por USD)",
-#     "S&P/BMV IPC",
-#     "S&P 500 (índice)",
-#     "Balanza comercial (miles de miles USD)"
-#   )) %>%
-#   ggplot(aes(x = llave, y = valor, group = 1)) +
-#   geom_line(color = "darkorange", size = 1) +
-#   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
-#   scale_y_continuous(labels = label_number(accuracy = 0.1)) +
-#   theme_minimal(base_size = 13) +
-#   theme(
-#     axis.text.x = element_text(angle = 45, hjust = 1),
-#     axis.text.y = element_text(size = 10),
-#     strip.text = element_text(face = "bold", size = 10),
-#     plot.title = element_text(hjust = 0.5,  size = 10)
-#   ) +
-#   labs(
-#     title = "Indicadores Macroeconómicos II – Dinero, Mercados y Tipo de Cambio (Unidades)",
-#     x = "Fecha",
-#     y = NULL
-#   )
-
 ```
 
 Tras aplicar la transformación de primeras diferencias a todas las series temporales, se comprobó mediante el Test ADF que las series transformadas cumplen con el criterio de estacionariedad (p-valor \< 0.05 en todos los casos). Por tanto, las primeras diferencias de las variables pueden utilizarse de forma adecuada en los modelos de predicción.
 
 ```{r}
-#| warning: false
-#| echo: false
 #| fig.asp: 0.8
 #| fig.width: 7
 
 # Calcular primeras diferencias
-II <- I %>%
+I_diff <- I %>%
   mutate(across(-llave, ~ .x - lag(.x), .names = "diff_{.col}"))
 
 # Seleccionar solo las primeras diferencias
-III <- II %>% select(llave, starts_with("diff_"))
+I_diff <- I_diff %>% dplyr::select(llave, starts_with("diff_"))
 
 # Separar variables con "y" y el resto
-vars_y <- III %>% select(contains("y")) %>% names()
-vars_rest <- III %>% select(-all_of(vars_y), -llave) %>% names()
+vars_y <- I_diff %>% dplyr::select(contains("y")) %>% names()
+vars_rest <- I_diff %>% dplyr::select(-all_of(vars_y), -llave) %>% names()
 
 # Pivotear largo para variables con "y"
-III_y <- III %>%
-  select(llave, all_of(vars_y)) %>%
+vars_y_diff <- I_diff %>%
+  dplyr::select(llave, all_of(vars_y)) %>%
   pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
 
 # Pivotear largo para el resto
-III_rest <- III %>%
-  select(llave, all_of(vars_rest)) %>%
+vars_rest_diff <- I_diff %>%
+  dplyr::select(llave, all_of(vars_rest)) %>%
   pivot_longer(cols = -llave, names_to = "variable", values_to = "valor")
 
-
 # Mejorar etiquetas de variables con "y"
-III_y <- III_y %>%
+vars_y_diff <- vars_y_diff %>%
   mutate(variable = case_when(
-    variable == "diff_y_pe" ~ "Δ PE (%)",
-    variable == "diff_y_provisiones" ~ "Δ Provisiones (%)",
-    variable == "diff_y_mora" ~ "Δ Mora (%)",
+    variable == "diff_y_pe_actividad_empresarial_o_comercial" ~ "Δ PE Comercial",
+    variable == "diff_y_pe_automotriz" ~ "Δ PE Automotriz",
+    variable == "diff_y_pe_entidades_financieras" ~ "Δ PE Entidades financieras",
+    variable == "diff_y_pe_nomina" ~ "Δ PE Nomina",
+    variable == "diff_y_pe_personales" ~ "Δ PE Personales",
+    variable == "diff_y_pe_tarjeta_de_credito" ~ "Δ PE Tarjeta de crédito",
     TRUE ~ gsub("diff_", "Δ ", variable)
   ))
 
+vars_y_diff %>%
+  ggplot(aes(x = llave, y = valor)) +
+  geom_line(color = "steelblue", size = 1) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
+  ) +
+  labs(
+    title = "Primeras diferencias: Series con 'y'",
+    x = "Fecha",
+    y = ""
+  )
+```
+
+```{r}
+#| fig.asp: 0.8
+#| fig.width: 7
+
 # Mejorar etiquetas del resto
-III_rest <- III_rest %>%
+vars_rest_diff <- vars_rest_diff %>%
   mutate(variable = case_when(
     variable == "diff_usd_mxn" ~ "Δ USD/MXN",
     variable == "diff_tiie_fondeo" ~ "Δ TIIE fondeo (p.p.)",
@@ -670,52 +528,7 @@ III_rest <- III_rest %>%
     TRUE ~ gsub("diff_", "Δ ", variable)
   ))
 
-III_y %>%
-  ggplot(aes(x = llave, y = valor)) +
-  geom_line(color = "steelblue", size = 1) +
-  facet_wrap(~ variable, scales = "free_y", ncol = 3) +
-  theme_minimal(base_size = 14) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(face = "bold"),
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 16)
-  ) +
-  labs(
-    title = "Primeras diferencias: Series con 'y'",
-    x = "Fecha",
-    y = ""
-  )
-
-```
-
-```{r}
-#| warning: false
-#| echo: false
-#| fig.asp: 0.8
-#| fig.width: 7
-
-# Gráfico primeras diferencias: resto de series
-III_rest <- III_rest %>%
-  mutate(variable = case_when(
-    variable == "diff_usd_mxn" ~ "Δ USD/MXN (pesos por USD)",
-    variable == "diff_tiie_fondeo" ~ "Δ TIIE fondeo (p.p.)",
-    variable == "diff_remesas" ~ "Δ Remesas (miles de millones MXN)",
-    variable == "diff_m1" ~ "Δ M1 (miles de millones MXN)",
-    variable == "diff_m2" ~ "Δ M2 (miles de millones MXN)",
-    variable == "diff_m3" ~ "Δ M3 (miles de millones MXN)",
-    variable == "diff_balanza" ~ "Δ Balanza comercial (miles de miles USD)",
-    variable == "diff_inpc" ~ "Δ INPC (2018=100)",
-    variable == "diff_igoec" ~ "Δ IGOEC (2018=100)",
-    variable == "diff_igae" ~ "Δ IGAE (2018=100)",
-    variable == "diff_google_deuda" ~ "Δ Google deuda (índice)",
-    variable == "diff_google_empleo" ~ "Δ Google empleo (índice)",
-    variable == "diff_puestos_trabajo" ~ "Δ millones Puestos de trabajo",
-    variable == "diff_s_p_bmv_ipc" ~ "Δ S&P/BMV IPC",
-    variable == "diff_s_p_500" ~ "Δ S&P 500 (índice)",
-    TRUE ~ gsub("diff_", "Δ ", variable)
-  ))
-
-III_rest %>%
+vars_rest_diff %>%
   filter(variable %in% c(
     "Δ INPC (2018=100)",
     "Δ IGAE (2018=100)",
@@ -732,20 +545,17 @@ III_rest %>%
     axis.text.x = element_text(angle = 45, hjust = 1)
   ) +
   labs(
-    title = "Indicadores Macro – Grupo 1 (1 diferencia)",
+    title = "Indicadores Macro – Primera diferencia - Grupo 1",
     x = "Fecha",
     y = NULL
   )
-
-
 ```
 
 ```{r}
-#| warning: false
-#| echo: false
 #| fig.asp: 0.8
 #| fig.width: 7
-III_rest %>%
+
+vars_rest_diff %>%
   filter(variable %in% c(
     "Δ M1 (miles de millones MXN)",
     "Δ M2 (miles de millones MXN)",
@@ -764,14 +574,13 @@ III_rest %>%
     axis.text.x = element_text(angle = 45, hjust = 1)
   ) +
   labs(
-    title = "Indicadores Macro – Grupo 2 (1 diferencia)",
+    title = "Indicadores Macro - Primera diferencia – Grupo 2",
     x = "Fecha",
     y = NULL
   )
-
 ```
 
-## Modelado (siguientes pasos)
+## Modelado
 
 Para el análisis de nuestras variables, planeamos hacer la comparación entre los siguientes modelos:
 
@@ -787,106 +596,464 @@ Para el análisis de nuestras variables, planeamos hacer la comparación entre l
     -   Ventajas: Captura tanto dinámica general como efectos estacionales; permite predecir en presencia de ciclos regulares.
 
     -   Consideraciones: Identificar y ajustar adecuadamente componentes estacionales (P, D, Q, s); asegurar estacionariedad.
-3.  **XGBoosting**
+3.  **Métodos basados en árboles**
     -   Objetivo: Detectar patrones complejos y no lineales en el riesgo crediticio, integrando variables macroeconómicas, financieras y alternativas (como Google Trends).
 
     -   Ventajas: Alta precisión, maneja grandes volúmenes de datos, robusto a variables irrelevantes y permite interpretar importancia de variables.
 
     -   Consideraciones: Evitar fuga de información temporal ( data leakage), usar variables rezagadas, validar con divisiones temporales adecuadas (walk-forward).
 
-VAR
+```{r}
+# Function to add time features and lag variables
+add_features <- function(data, target, lags = 1:3) {
+  df <- data %>%
+    arrange(llave) %>%
+    mutate(time_index = as.numeric(as.factor(llave)))  # Simple time encoding
+
+  # Create lags for target variable
+  for (lag_val in lags) {
+    df[[paste0(target, "_lag", lag_val)]] <- dplyr::lag(df[[target]], lag_val)
+  }
+
+  # Drop rows with NA (from lags)
+  df <- df %>% drop_na()
+  return(df)
+}
+
+# Function to fit models and return RMSE
+fit_models <- function(df, target, test_size = 0.2) {
+  # Prepare data
+  predictors <- setdiff(names(df), c("llave", target))
+  X <- df[, predictors]
+  y <- df[[target]]
+
+  # Split data
+  split_index <- floor((1 - test_size) * nrow(df))
+  X_train <- X[1:split_index, , drop = FALSE]
+  y_train <- y[1:split_index]
+  X_test <- X[(split_index + 1):nrow(df), , drop = FALSE]
+  y_test <- y[(split_index + 1):nrow(df)]
+
+  # Train control
+  control <- trainControl(method = "none")
+
+  # --- Models ---
+  results <- list()
+
+  # 1. Decision Tree (Pruned)
+  tree_model <- train(
+    x = X_train, y = y_train,
+    method = "rpart",
+    trControl = control,
+    tuneLength = 1
+  )
+  y_pred_tree <- predict(tree_model, X_test)
+  results$Tree <- RMSE(y_pred_tree, y_test)
+
+  # 2. Bagging (using randomForest with mtry = all)
+  bagging_model <- randomForest(
+    x = X_train, y = y_train,
+    mtry = ncol(X_train),
+    importance = TRUE
+  )
+  y_pred_bagging <- predict(bagging_model, X_test)
+  results$Bagging <- RMSE(y_pred_bagging, y_test)
+
+  # 3. Random Forest
+  rf_model <- randomForest(
+    x = X_train, y = y_train,
+    importance = TRUE
+  )
+  y_pred_rf <- predict(rf_model, X_test)
+  results$RandomForest <- RMSE(y_pred_rf, y_test)
+
+  # 4. XGBoost
+  xgb_train <- xgb.DMatrix(data = as.matrix(X_train), label = y_train)
+  xgb_test <- xgb.DMatrix(data = as.matrix(X_test), label = y_test)
+
+  xgb_model <- xgboost(
+    data = xgb_train,
+    nrounds = 100,
+    objective = "reg:squarederror",
+    verbose = 0
+  )
+  y_pred_xgb <- predict(xgb_model, xgb_test)
+  results$XGBoost <- RMSE(y_pred_xgb, y_test)
+
+  return(results)
+}
+
+# MAIN FUNCTION: loops over all target variables
+run_all_models <- function(data, lag_range = 1:3) {
+  targets <- names(data)[startsWith(names(data), "y_")]
+  all_results <- list()
+
+  for (target in targets) {
+    
+    
+    df_feat <- add_features(data, target, lags = lag_range)
+    res <- fit_models(df_feat, target)
+    all_results[[target]] <- res
+  }
+
+  return(bind_rows(all_results, .id = "Target_Variable"))
+}
+```
 
 ```{r}
-#| warning: false
-#| echo: false
+results_df <- run_all_models(I)
+
+kable(results_df, caption = "Resultado de los modelos")%>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r}
 #| fig.asp: 0.8
 #| fig.width: 7
 
-library(vars)
+# We'll pivot this to long and pick the model with minimum RMSE per target.
+best_models <- results_df %>%
+  pivot_longer(-Target_Variable, names_to = "Model", values_to = "RMSE") %>%
+  group_by(Target_Variable) %>%
+  slice_min(RMSE, n = 1) %>%
+  ungroup()
 
-# Asegurar formato de fecha mensual
-mb <- master_base %>%
-  mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
-  arrange(llave)
-
-# Definir variables dependientes (solo las que inician con "y_")
-dep_vars <- names(mb)[startsWith(names(mb), "y_")]
-
-df_diff <- mb %>%
-  dplyr::select(llave, all_of(dep_vars)) %>%
-  arrange(llave) %>%
-  mutate(across(all_of(dep_vars), ~ . - lag(.))) %>%
-  slice(-1)  # elimina solo la primera fila con NAs por lag
-
-# Verificación mínima de observaciones para p=4
-if (nrow(df_diff) < 5) stop("No hay suficientes observaciones para ajustar un VAR con p = 4.")
-
-# Modelo VAR solo con variables y_
-Y_var <- df_diff %>% dplyr::select(-llave)
-modelo_var <- VAR(Y_var, p = 4, type = "const")
-
-# Generar predicciones h pasos adelante
-h <- 5
-predicciones <- predict(modelo_var, n.ahead = h)
-
-# Crear secuencia de fechas futuras
-fechas_futuras <- seq(max(df_diff$llave) + 1/12, by = 1/12, length.out = h)
-
-# Último valor observado de cada variable
-ultimo_real <- df_diff %>%
-  filter(llave == max(llave)) %>%
-  dplyr::select(-llave) %>%
-  unlist() %>%
-  as.numeric()
-
-# Crear fila inicial con último valor real
-inicio_forecast <- data.frame(matrix(NA, nrow = 1, ncol = length(ultimo_real)))
-colnames(inicio_forecast) <- names(predicciones$fcst)
-inicio_forecast[1, ] <- ultimo_real
-inicio_forecast$llave <- max(df_diff$llave)
-
-# Crear dataframe de predicciones
-pred_df <- data.frame(fechas_futuras)
-for (var in names(predicciones$fcst)) {
-  pred_df[[var]] <- predicciones$fcst[[var]][, "fcst"]
+# ─── 1. Feature‑engineering helpers ──────────────────────────────────────────
+add_time_features <- function(df, target, lags = 1:3) {
+  df <- df %>% arrange(llave)
+  
+  # time index and seasonals
+  df <- df %>%
+    mutate(
+      time_index = as.integer(llave - min(llave)),
+      month      = month(llave),
+      sin_month  = sin(2*pi*month/12),
+      cos_month  = cos(2*pi*month/12)
+    )
+  
+  # lagged target
+  for(l in lags) {
+    df[[paste0(target, "_lag", l)]] <- lag(df[[target]], l)
+  }
+  
+  # drop initial NAs
+  df <- df %>% drop_na()
+  return(df)
 }
-pred_df <- pred_df %>% rename(llave = fechas_futuras)
 
-# Añadir punto real al inicio
-pred_df <- bind_rows(inicio_forecast, pred_df)
+# ─── 2. Forecasting function ─────────────────────────────────────────────────
+forecast_target <- function(df, target, model_name, horizon = 5) {
+  # 2.1 Prepare data + features
+  df_full <- add_time_features(df, target)
+  
+  # 2.2 Split into X / y
+  features <- setdiff(names(df_full), c("llave", target))
+  X_full <- df_full[, features]
+  y_full <- df_full[[target]]
+  
+  # 2.3 Fit best model on full data
+  if(model_name == "Tree") {
+    fit <- rpart(as.formula(paste(target, "~", paste(features, collapse = "+"))),
+                 data = df_full, method = "anova", control = rpart.control(cp = 0.01))
+  } else if(model_name == "Bagging") {
+    fit <- randomForest(x = X_full, y = y_full, mtry = ncol(X_full))
+  } else if(model_name == "RandomForest") {
+    fit <- randomForest(x = X_full, y = y_full)
+  } else if(model_name == "XGBoost") {
+    dtrain <- xgb.DMatrix(as.matrix(X_full), label = y_full)
+    fit <- xgboost(data = dtrain, nrounds = 100, objective = "reg:squarederror", verbose = 0)
+  } else {
+    stop("Unknown model: ", model_name)
+  }
+  
+  # 2.4 In‑sample fitted values
+  if(model_name == "XGBoost") {
+    df_full$.fitted <- predict(fit, xgb.DMatrix(as.matrix(X_full)))
+  } else {
+    df_full$.fitted <- predict(fit, newdata = X_full)
+  }
+  
+  # 2.5 Iterative forecasting
+  last_row <- tail(df_full, 1)
+  fdates    <- seq(last_row$llave %m+% months(1), by = "month", length.out = horizon)
+  forecasts <- numeric(horizon)
+  buffer    <- last_row
+  
+  for(i in seq_len(horizon)) {
+    # build new feature‐row
+    new <- tibble(llave = fdates[i]) %>%
+      mutate(
+        time_index = buffer$time_index + 1,
+        month      = month(llave),
+        sin_month  = sin(2*pi*month/12),
+        cos_month  = cos(2*pi*month/12)
+      )
+    # add lagged target from buffer
+    for(l in 1:3) {
+      new[[paste0(target, "_lag", l)]] <- buffer[[paste0(target, "_lag", l-1)]] %||% buffer[[target]]
+      # shift each lag: lag1←last actual, lag2←prev lag1, etc.
+      if(l > 1) {
+        new[[paste0(target, "_lag", l)]] <- buffer[[paste0(target, "_lag", l-1)]]
+      }
+    }
+    # predict
+    if(model_name == "XGBoost") {
+      forecasts[i] <- predict(fit, xgb.DMatrix(as.matrix(new[features])))
+    } else {
+      forecasts[i] <- predict(fit, newdata = new[features])
+    }
+    # update buffer: drop the oldest lag, prepend the new forecast
+    buffer <- buffer %>%
+      mutate(!!target := forecasts[i])
+  }
+  
+  # 2.6 Return a data.frame with actuals, fitted, and forecast
+  bind_rows(
+    df_full %>% dplyr::select(llave, actual = !!sym(target), fitted = .fitted),
+    tibble(llave = fdates, actual = NA_real_, fitted = forecasts)
+  ) %>% mutate(Target = target)
+}
 
-# Formato largo para predicciones
-df_pred_long <- pred_df %>%
-  pivot_longer(-llave, names_to = "variable", values_to = "forecast")
+# ─── 3. Loop over targets and plot ────────────────────────────────────────────
 
-# Datos reales recientes (para graficar comparación)
-df_real_long <- df_diff %>%
-  filter(llave >= (max(llave) - (h + 2)/12)) %>%
-  pivot_longer(-llave, names_to = "variable", values_to = "real")
+plots <- purrr::map2(
+  best_models$Target_Variable,
+  best_models$Model,
+  function(targ, mdl) {
+    # Grab only llave + target from your original I
+    target_sym <- rlang::sym(targ)
+    df_targ <- I %>% dplyr::select(llave, !!target_sym)
 
-# Unir reales y pronósticos
-df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %>%
-  mutate(
-    real_bps = real * 10000,
-    forecast_bps = forecast * 10000
+    # Fit & forecast
+    fc_tbl <- forecast_target(df_targ, targ, mdl, horizon = 5)
+
+    # Debug: confirm fc_tbl columns
+    #print(names(fc_tbl))
+    # [1] "llave"  "actual" "fitted" "Target"
+
+    # Now select the two columns we know exist
+    df_plot <- fc_tbl %>% dplyr::select(llave, actual, fitted)
+
+    # And plot
+    ggplot(df_plot, aes(x = llave)) +
+      geom_line(aes(y = actual, col = "Actual")) +
+      geom_line(aes(y = fitted, col = "Fitted/Forecast")) +
+      scale_color_manual(NULL,
+                         values = c("Actual"          = "black",
+                                    "Fitted/Forecast" = "blue")) +
+      labs(title = targ, x = NULL, y = "Value") +
+      theme_minimal()
+  }
+)
+
+# Arrange in a grid with 2 columns
+do.call(grid.arrange, c(plots, ncol = 2))
+```
+
+Dado que los modelos basados en árboles no consideran inherentemente patrones temporales, diseñamos características adicionales para codificar explícitamente la dinámica temporal. Estas incluyeron rezagos de 1, 3 y 6 meses tanto para los objetivos como para los predictores, promedios móviles para suavizar la volatilidad local, indicadores estacionales (mes del año, estacionalidad seno/coseno) y una variable de tendencia temporal lineal. Tras eliminar los valores faltantes generados por el rezago, construimos un conjunto de datos de entrenamiento para el aprendizaje supervisado.
+
+Implementamos y comparamos cuatro modelos para cada variable objetivo: un árbol de decisión podado, bagging (mediante bosques aleatorios con muestreo completo de variables), un bosque aleatorio estándar y XGBoost. Cada modelo se entrenó con el primer 80 % de los datos ordenados temporalmente y se evaluó con el 20 % restante, utilizando RMSE como métrica de rendimiento. Los resultados mostraron que los métodos de conjunto, en particular los bosques aleatorios y XGBoost, superaron consistentemente a los árboles de decisión individuales, reduciendo considerablemente el error de pronóstico.
+
+Una vez identificado el mejor modelo para cada objetivo, lo reentrenamos utilizando toda la muestra histórica y generamos pronósticos con cinco meses de antelación.
+
+En general, este enfoque demostró que los modelos de aprendizaje automático, cuando se diseñan cuidadosamente para incorporar la estructura temporal, pueden proporcionar pronósticos robustos, interpretables y oportunos de pérdidas crediticias.
+
+4.  **Prophet**
+
+```{r}
+run_prophet <- function(df, target, cutoff_frac = 0.8, horizon = 5) {
+  df2 <- df %>%
+    dplyr::select(ds = llave, y = !!sym(target)) %>%
+    mutate(ds = as.Date(ds))  # ensure Date
+
+  # 1) Train/test split
+  n_cut    <- floor(nrow(df2) * cutoff_frac)
+  train_df <- df2[1:n_cut, ]
+  test_df  <- df2[(n_cut+1):nrow(df2), ]
+
+  # 2) Fit Prophet
+  m <- prophet(train_df, seasonality.mode = "multiplicative")
+
+  # 3) In‐sample fitted
+  fitted_df <- predict(m, train_df) %>%
+    transmute(ds = as.Date(ds), fitted = yhat)
+
+  # 4) Full forecast (train + test + horizon)
+  future <- make_future_dataframe(m,
+                                  periods = nrow(test_df) + horizon,
+                                  freq    = "month") %>%
+            mutate(ds = as.Date(ds))
+  fc_all <- predict(m, future) %>%
+            transmute(ds = as.Date(ds), yhat)
+
+  # 5) Build the “In-Sample” tibble
+  in_sample <- train_df %>%
+    left_join(fitted_df, by = "ds") %>%
+    rename(actual = y) %>%
+    mutate(type = "In-Sample")
+
+  # 6) Build the “Test” tibble via join
+  test_tbl <- test_df %>%
+    rename(actual = y) %>%
+    left_join(fc_all %>% rename(fitted = yhat), by = "ds") %>%
+    mutate(type = "Test")
+
+  # 7) 5‑step forecast beyond last observed date
+  fc5 <- fc_all %>%
+    filter(ds > max(df2$ds)) %>%
+    dplyr::slice_head(n = horizon) %>%
+    transmute(ds, actual = NA_real_, fitted = yhat, type = "Forecast")
+
+  # 8) Compute RMSE on test
+  rmse_prop <- rmse(test_tbl$actual, test_tbl$fitted)
+
+  # 9) Combine for plotting
+  plot_tbl <- bind_rows(in_sample, test_tbl, fc5)
+
+  list(
+    target   = target,
+    rmse     = rmse_prop,
+    plot_tbl = plot_tbl
   )
+}
 
-# Gráfico final
-ggplot(df_final, aes(x = llave)) +
-  geom_line(aes(y = real_bps, color = "Real")) +
-  geom_line(aes(y = forecast_bps, color = "Forecast"), linetype = "dashed") +
-  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
-  theme_minimal(base_size = 11) +
-  theme(
-    legend.position = "top",
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  ) +
-  labs(
-    title = "VAR con Exógenas: Serie Real y Predicción",
-    x = "Mes",
-    y = "Diferencia mensual (bps)",
-    color = ""
-  ) +
-  scale_color_manual(values = c("Real" = "black", "Forecast" = "blue"))
+# ─── 1. Run Prophet for every target ─────────────────────────────────────────
+prophet_results <- map(
+  best_models$Target_Variable,
+  ~ run_prophet(I, .x, cutoff_frac = 0.8, horizon = 5)
+)
+
+# Extract RMSEs and combine with tree results
+prophet_rmse <- tibble(
+  Target_Variable = map_chr(prophet_results, "target"),
+  RMSE_prophet   = map_dbl(prophet_results, "rmse")
+)
+
+comparison_df <- best_models %>%
+  left_join(prophet_rmse, by = "Target_Variable") %>%
+  rename(RMSE_tree = RMSE)
+
+kable(comparison_df, caption = "Comparación")%>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+```{r}
+#| fig.asp: 0.8
+#| fig.width: 7
+
+# ─── 2. Generate Plots and Arrange Grid ─────────────────────────────────────
+plots <- map(prophet_results, function(res) {
+  ggplot(res$plot_tbl, aes(x = ds)) +
+    geom_line(aes(y = actual, col = "Actual")) +
+    geom_line(aes(y = fitted, col = "Fitted/Forecast")) +
+    scale_color_manual(NULL,
+      values = c("Actual"          = "black",
+                 "Fitted/Forecast" = "blue")) +
+    labs(title = res$target, x = NULL, y = "Value") +
+    theme_minimal()
+})
+
+do.call(grid.arrange, c(plots, ncol = 2))
+```
+
+Prophet es un modelo estructural de series temporales diseñado para gestionar automáticamente tendencias, estacionalidad y puntos de cambio. A partir de nuestro conjunto de datos dividimos el 80 % de las observaciones para el ajuste del modelo, y el 20 % restante para la evaluación fuera de la muestra. Para cada serie, ajustamos un modelo Prophet de estacionalidad multiplicativa en la ventana de entrenamiento y, a continuación, generamos predicciones para esa ventana (valores ajustados dentro de la muestra) y para el período de prueba mantenido, más cinco meses adicionales de pronóstico real.
+
+Prophet destaca donde predominan los patrones estructurales: su detección de puntos de cambio se adapta rápidamente a los cambios de tendencia, y la estacionalidad multiplicativa escala de forma natural las fluctuaciones estacionales a medida que aumenta la magnitud de la serie. Normalmente, igualó o superó a nuestros modelos de árbol en segmentos con una estacionalidad fuerte y regular o cambios de tendencia pronunciados, como las pérdidas por préstamos de nómina que aumentan cíclicamente. Sin embargo, cuando los efectos autorregresivos de corto retardo (por ejemplo, las pérdidas del mes inmediatamente anterior) fueron el factor principal, nuestros conjuntos de Bosque Aleatorio y XGBoost a menudo superaron a Prophet al aprovechar directamente esas características de retardo diseñadas.
+
+5.  **VAR**
+
+```{r}
+#| fig.asp: 0.8
+#| fig.width: 7
+
+# # Asegurar formato de fecha mensual
+# mb <- I %>%
+#   mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
+#   arrange(llave)
+# 
+# # Definir variables dependientes (solo las que inician con "y_")
+# dep_vars <- names(mb)[startsWith(names(mb), "y_")]
+# 
+# df_diff <- mb %>%
+#   dplyr::select(llave, all_of(dep_vars)) %>%
+#   arrange(llave) %>%
+#   mutate(across(all_of(dep_vars), ~ . - lag(.))) %>%
+#   dplyr::slice(-1)  # elimina solo la primera fila con NAs por lag
+# 
+# # Verificación mínima de observaciones para p=4
+# if (nrow(df_diff) < 5) stop("No hay suficientes observaciones para ajustar un VAR con p = 4.")
+# 
+# # Modelo VAR solo con variables y_
+# Y_var <- df_diff %>% dplyr::select(-llave)
+# ###
+# #cat("Any NAs? ", anyNA(Y_var), "\n")
+# #print(sort(colSums(is.na(Y_var)), decreasing = TRUE))
+# #head(Y_var)
+# ###
+# modelo_var <- VAR(Y_var, p = 4, type = "const")
+# 
+# # Generar predicciones h pasos adelante
+# h <- 5
+# predicciones <- predict(modelo_var, n.ahead = h)
+# 
+# # Crear secuencia de fechas futuras
+# fechas_futuras <- seq(max(df_diff$llave) + 1/12, by = 1/12, length.out = h)
+# 
+# # Último valor observado de cada variable
+# ultimo_real <- df_diff %>%
+#   filter(llave == max(llave)) %>%
+#   dplyr::select(-llave) %>%
+#   unlist() %>%
+#   as.numeric()
+# 
+# # Crear fila inicial con último valor real
+# inicio_forecast <- data.frame(matrix(NA, nrow = 1, ncol = length(ultimo_real)))
+# colnames(inicio_forecast) <- names(predicciones$fcst)
+# inicio_forecast[1, ] <- ultimo_real
+# inicio_forecast$llave <- max(df_diff$llave)
+# 
+# # Crear dataframe de predicciones
+# pred_df <- data.frame(fechas_futuras)
+# for (var in names(predicciones$fcst)) {
+#   pred_df[[var]] <- predicciones$fcst[[var]][, "fcst"]
+# }
+# pred_df <- pred_df %>% rename(llave = fechas_futuras)
+# 
+# # Añadir punto real al inicio
+# pred_df <- bind_rows(inicio_forecast, pred_df)
+# 
+# # Formato largo para predicciones
+# df_pred_long <- pred_df %>%
+#   pivot_longer(-llave, names_to = "variable", values_to = "forecast")
+# 
+# # Datos reales recientes (para graficar comparación)
+# df_real_long <- df_diff %>%
+#   filter(llave >= (max(llave) - (h + 2)/12)) %>%
+#   pivot_longer(-llave, names_to = "variable", values_to = "real")
+# 
+# # Unir reales y pronósticos
+# df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %>%
+#   mutate(
+#     real_bps = real * 10000,
+#     forecast_bps = forecast * 10000
+#   )
+# 
+# # Gráfico final
+# ggplot(df_final, aes(x = llave)) +
+#   geom_line(aes(y = real_bps, color = "Real")) +
+#   geom_line(aes(y = forecast_bps, color = "Forecast"), linetype = "dashed") +
+#   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+#   theme_minimal(base_size = 11) +
+#   theme(
+#     legend.position = "top",
+#     axis.text.x = element_text(angle = 45, hjust = 1)
+#   ) +
+#   labs(
+#     title = "VAR con Exógenas: Serie Real y Predicción",
+#     x = "Mes",
+#     y = "Diferencia mensual (bps)",
+#     color = ""
+#   ) +
+#   scale_color_manual(values = c("Real" = "black", "Forecast" = "blue"))
 
 ```
