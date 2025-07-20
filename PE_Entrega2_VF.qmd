@@ -962,6 +962,8 @@ Prophet destaca donde predominan los patrones estructurales: su detección de pu
 
 5.  **VAR**
 
+    El modelo VAR (Vector Autoregresivo) es una herramienta econométrica diseñada para capturar las interrelaciones dinámicas entre múltiples series temporales. A diferencia de los modelos univariados, el VAR permite que cada variable del sistema sea explicada no solo por sus propios rezagos, sino también por los rezagos de las demás variables incluidas. El supuesto fundamental es que todas las variables son tratadas como endógenas y que la estructura de rezagos resume adecuadamente la dinámica del sistema.
+
 ```{r}
 #| fig.asp: 0.8
 #| fig.width: 7
