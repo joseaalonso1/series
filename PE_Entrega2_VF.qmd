@@ -78,7 +78,7 @@ Para la elaboración de la base de datos final, primero se procedió con el arma
 ```{r}
 rm(list = ls())
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics, vars)
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics)
 ```
 
 ```{r}
@@ -966,94 +966,91 @@ Prophet destaca donde predominan los patrones estructurales: su detección de pu
 #| fig.asp: 0.8
 #| fig.width: 7
 
-# # Asegurar formato de fecha mensual
-# mb <- I %>%
-#   mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
-#   arrange(llave)
-# 
+ # Asegurar formato de fecha mensual
+ mb <- I %>%
+   mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
+   arrange(llave)
+
 # # Definir variables dependientes (solo las que inician con "y_")
-# dep_vars <- names(mb)[startsWith(names(mb), "y_")]
-# 
-# df_diff <- mb %>%
-#   dplyr::select(llave, all_of(dep_vars)) %>%
-#   arrange(llave) %>%
-#   mutate(across(all_of(dep_vars), ~ . - lag(.))) %>%
-#   dplyr::slice(-1)  # elimina solo la primera fila con NAs por lag
-# 
+ dep_vars <- names(mb)[startsWith(names(mb), "y_")]
+#
+ df_diff <- mb %>%
+   dplyr::select(llave, all_of(dep_vars)) %>%
+   arrange(llave) %>%
+   mutate(across(all_of(dep_vars), ~ . - lag(.))) %>%
+   dplyr::slice(-1) 
+#
 # # Verificación mínima de observaciones para p=4
-# if (nrow(df_diff) < 5) stop("No hay suficientes observaciones para ajustar un VAR con p = 4.")
-# 
+ if (nrow(df_diff) < 5) stop("No hay suficientes observaciones para ajustar un VAR con p = 4.")
+#
 # # Modelo VAR solo con variables y_
-# Y_var <- df_diff %>% dplyr::select(-llave)
+ Y_var <- df_diff %>% dplyr::select(-llave)
 # ###
-# #cat("Any NAs? ", anyNA(Y_var), "\n")
-# #print(sort(colSums(is.na(Y_var)), decreasing = TRUE))
-# #head(Y_var)
-# ###
-# modelo_var <- VAR(Y_var, p = 4, type = "const")
-# 
+ modelo_var <-vars::VAR(Y_var, p = 4, type = "const")
+#
 # # Generar predicciones h pasos adelante
-# h <- 5
-# predicciones <- predict(modelo_var, n.ahead = h)
-# 
+ h <- 5
+ predicciones <- predict(modelo_var, n.ahead = h)
+#
 # # Crear secuencia de fechas futuras
-# fechas_futuras <- seq(max(df_diff$llave) + 1/12, by = 1/12, length.out = h)
-# 
+fechas_futuras <- seq(max(df_diff$llave) + 1/12, by = 1/12, length.out = h)
+#
 # # Último valor observado de cada variable
-# ultimo_real <- df_diff %>%
-#   filter(llave == max(llave)) %>%
-#   dplyr::select(-llave) %>%
-#   unlist() %>%
-#   as.numeric()
-# 
+ultimo_real <- df_diff %>%
+   filter(llave == max(llave)) %>%
+   dplyr::select(-llave) %>%
+   unlist() %>%
+   as.numeric()
+#
 # # Crear fila inicial con último valor real
-# inicio_forecast <- data.frame(matrix(NA, nrow = 1, ncol = length(ultimo_real)))
-# colnames(inicio_forecast) <- names(predicciones$fcst)
-# inicio_forecast[1, ] <- ultimo_real
-# inicio_forecast$llave <- max(df_diff$llave)
-# 
+inicio_forecast <- data.frame(matrix(NA, nrow = 1, ncol = length(ultimo_real)))
+
+colnames(inicio_forecast) <- names(predicciones$fcst)
+inicio_forecast[1, ] <- ultimo_real
+inicio_forecast$llave <- max(df_diff$llave)
+#
 # # Crear dataframe de predicciones
-# pred_df <- data.frame(fechas_futuras)
-# for (var in names(predicciones$fcst)) {
-#   pred_df[[var]] <- predicciones$fcst[[var]][, "fcst"]
-# }
-# pred_df <- pred_df %>% rename(llave = fechas_futuras)
-# 
-# # Añadir punto real al inicio
-# pred_df <- bind_rows(inicio_forecast, pred_df)
-# 
-# # Formato largo para predicciones
-# df_pred_long <- pred_df %>%
-#   pivot_longer(-llave, names_to = "variable", values_to = "forecast")
-# 
-# # Datos reales recientes (para graficar comparación)
-# df_real_long <- df_diff %>%
-#   filter(llave >= (max(llave) - (h + 2)/12)) %>%
-#   pivot_longer(-llave, names_to = "variable", values_to = "real")
-# 
+pred_df <- data.frame(fechas_futuras)
+for (var in names(predicciones$fcst)) {
+  pred_df[[var]] <- predicciones$fcst[[var]][, "fcst"]
+}
+pred_df <- pred_df %>% rename(llave = fechas_futuras)
+
+# Añadir punto real al inicio
+pred_df <- bind_rows(inicio_forecast, pred_df)
+
+# Formato largo para predicciones
+df_pred_long <- pred_df %>%
+  pivot_longer(-llave, names_to = "variable", values_to = "forecast")
+
+# Datos reales recientes (para graficar comparación)
+df_real_long <- df_diff %>%
+  filter(llave >= (max(llave) - (h + 2)/12)) %>%
+  pivot_longer(-llave, names_to = "variable", values_to = "real")
+ 
 # # Unir reales y pronósticos
-# df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %>%
-#   mutate(
-#     real_bps = real * 10000,
-#     forecast_bps = forecast * 10000
-#   )
-# 
+df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %>%
+   mutate(
+     real_bps = real * 10000,
+     forecast_bps = forecast * 10000
+   )
+ 
 # # Gráfico final
-# ggplot(df_final, aes(x = llave)) +
-#   geom_line(aes(y = real_bps, color = "Real")) +
-#   geom_line(aes(y = forecast_bps, color = "Forecast"), linetype = "dashed") +
-#   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
-#   theme_minimal(base_size = 11) +
-#   theme(
-#     legend.position = "top",
-#     axis.text.x = element_text(angle = 45, hjust = 1)
-#   ) +
-#   labs(
-#     title = "VAR con Exógenas: Serie Real y Predicción",
-#     x = "Mes",
-#     y = "Diferencia mensual (bps)",
-#     color = ""
-#   ) +
-#   scale_color_manual(values = c("Real" = "black", "Forecast" = "blue"))
+ ggplot(df_final, aes(x = llave)) +
+   geom_line(aes(y = real_bps, color = "Real")) +
+   geom_line(aes(y = forecast_bps, color = "Forecast"), linetype = "dashed") +
+   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+   theme_minimal(base_size = 11) +
+   theme(
+     legend.position = "top",
+     axis.text.x = element_text(angle = 45, hjust = 1)
+   ) +
+   labs(
+    title = "VAR con Exógenas: Serie Real y Predicción",
+     x = "Mes",
+     y = "Diferencia mensual (bps)",
+     color = ""
+   ) +
+  scale_color_manual(values = c("Real" = "black", "Forecast" = "blue"))
 
 ```
