@@ -78,7 +78,7 @@ Para la elaboración de la base de datos final, primero se procedió con el arma
 ```{r}
 rm(list = ls())
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics)
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics, forecast,ggfortify)
 ```
 
 ```{r}
@@ -1056,3 +1056,184 @@ df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %
   scale_color_manual(values = c("Real" = "black", "Forecast" = "blue"))
 
 ```
+
+### SARIMA y SARIMAX
+
+```{r}
+# — 0) Cargar librerías y limpiar workspace
+rm(list = ls())
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(dplyr,ggplot2, stringr, tidyr)
+
+
+# — 2) Leer y limpiar datos
+I <- read_excel("master_base_filtrado.xlsx") %>%
+  clean_names() %>%
+  mutate(
+    m1               = m1 / 1e6,
+    m2               = m2 / 1e6,
+    m3               = m3 / 1e6,
+    balanza          = balanza / 1e6,
+    remesas          = remesas / 1e3,
+    puestos_trabajo  = puestos_trabajo / 1e6,
+    tiie_fondeo      = tiie_fondeo / 100,
+    llave            = ym(llave)
+  ) %>%
+  arrange(llave)
+
+
+# — 3) Definir series objetivo y exógenas
+targets <- c(
+  "y_pe_actividad_empresarial_o_comercial",
+  "y_pe_automotriz",
+  "y_pe_entidades_financieras",
+  "y_pe_nomina",
+  "y_pe_personales",
+  "y_pe_tarjeta_de_credito"
+)
+exogs <- c(
+  "usd_mxn","tiie_fondeo","remesas",
+  "m1","m2","m3","balanza",
+  "inpc","igoec","igae",
+  "google_deuda","google_empleo",
+  "puestos_trabajo","s_p_bmv_ipc","s_p_500"
+)
+# — 1) Listas vacías para apilar resultados
+#df_list_sarima  <- list()
+df_list_sarimax <- list()
+
+# — 2) Loop sobre cada serie objetivo
+for (tgt in targets) {
+  # Nombre legible para títulos y facetas
+  name_pretty <- str_to_title(str_replace_all(tgt, "y_pe_|_", " "))
+  
+  # — Datos históricos sin NAs
+  df0 <- I %>% dplyr::select(llave, all_of(tgt)) %>% drop_na()
+  ts0 <- ts(df0[[tgt]],
+            start     = c(year(min(df0$llave)), month(min(df0$llave))),
+            frequency = 12)
+  
+  # —— A) SARIMA puro (seasonal=TRUE) ——
+ # fit_sarima  <- auto.arima(ts0, seasonal = TRUE)
+ # fc_sarima   <- forecast(fit_sarima, h = 12)
+  
+  # Gráfica individual SARIMA
+ # plot(fc_sarima,
+ #      main = paste0("SARIMA – ", name_pretty),
+ #      xlab = "Año", ylab = "Valor")
+  #lines(ts0, col = "black")
+  
+  # Preparo tibble histórico + forecast
+# df_hist_s   <- tibble(
+#   fecha    = df0$llave,
+#   valor    = df0[[tgt]],
+#   variable = name_pretty,
+#   type     = "Histórico"
+# )
+# fdates_s    <- seq(max(df0$llave) %m+% months(1),
+#                    by = "month", length.out = 12)
+# df_fc_s     <- tibble(
+#   fecha    = fdates_s,
+#   valor    = as.numeric(fc_sarima$mean),
+#   lo95     = fc_sarima$lower[,2],
+#   hi95     = fc_sarima$upper[,2],
+#   variable = name_pretty,
+#   type     = "Pronóstico"
+# )
+# df_list_sarima[[tgt]] <- bind_rows(df_hist_s, df_fc_s)
+# 
+  # —— B) SARIMAX con exógenas ——
+  df1 <- I %>% dplyr::select(llave, all_of(tgt), all_of(exogs)) %>% drop_na()
+  # Aseguro numéricas
+  df1[exogs] <- lapply(df1[exogs], as.numeric)
+  ts1 <- ts(df1[[tgt]],
+            start     = c(year(min(df1$llave)), month(min(df1$llave))),
+            frequency = 12)
+  xreg1 <- as.matrix(df1[exogs])
+  
+  fit_sarimax <- auto.arima(ts1, xreg = xreg1, seasonal = TRUE)
+  fc_sarimax  <- forecast(fit_sarimax, xreg = tail(xreg1,12), h = 12)
+  
+  # Gráfica individual SARIMAX
+  plot(fc_sarimax,
+       main = paste0("SARIMAX – ", name_pretty),
+       xlab = "Año", ylab = "Valor")
+  lines(ts1, col = "black")
+  
+  # Preparo tibble histórico + forecast
+  df_hist_x   <- tibble(
+    fecha    = df1$llave,
+    valor    = df1[[tgt]],
+    variable = name_pretty,
+    type     = "Histórico"
+  )
+  fdates_x    <- seq(max(df1$llave) %m+% months(1),
+                     by = "month", length.out = 12)
+  df_fc_x     <- tibble(
+    fecha    = fdates_x,
+    valor    = as.numeric(fc_sarimax$mean),
+    lo95     = fc_sarimax$lower[,2],
+    hi95     = fc_sarimax$upper[,2],
+    variable = name_pretty,
+    type     = "Pronóstico"
+  )
+  df_list_sarimax[[tgt]] <- bind_rows(df_hist_x, df_fc_x)
+}
+
+# — 3) Crear data.frames para facetas
+#plot_df_sarima  <- bind_rows(df_list_sarima)  %>%
+#  mutate(type = factor(type, levels = c("Histórico"#,"Pronóstico")))
+plot_df_sarimax <- bind_rows(df_list_sarimax) %>%
+  mutate(type = factor(type, levels = c("Histórico","Pronóstico")))
+
+## — 4) Facetas SARIMA (2 filas × 3 columnas)
+#p_sarima <- ggplot(plot_df_sarima, aes(fecha, valor, #color = type)) +
+#  geom_line() +
+#  geom_ribbon(
+#    data = filter(plot_df_sarima, type == "Pronóstico"),
+#    aes(ymin = lo95, ymax = hi95),
+#    fill = "steelblue", alpha = 0.2, color = NA
+#  ) +
+#  facet_wrap(~variable, ncol = 3, scales = "free_y") +
+#  scale_x_date(date_breaks = "6 months", date_labels = #"%Y-%m") +
+#  scale_color_manual(values = c("Histórico" = "black", #"Pronóstico" = "steelblue")) +
+#  labs(
+#    title = "Pronósticos SARIMA – Todas las series",
+#    x     = "Fecha",
+#    y     = "Valor",
+#    color = NULL
+#  ) +
+#  theme_minimal(base_size = 12) +
+#  theme(
+#    legend.position = "bottom",
+#    panel.spacing   = unit(1, "lines")
+#  )
+#print(p_sarima)
+#
+# — 5) Facetas SARIMAX (2 filas × 3 columnas)
+p_sarimax <- ggplot(plot_df_sarimax, aes(fecha, valor, color = type)) +
+  geom_line() +
+  geom_ribbon(
+    data = filter(plot_df_sarimax, type == "Pronóstico"),
+    aes(ymin = lo95, ymax = hi95),
+    fill = "steelblue", alpha = 0.2, color = NA
+  ) +
+  facet_wrap(~variable, ncol = 3, scales = "free_y") +
+  scale_x_date(date_breaks = "6 months", date_labels = "%Y-%m") +
+  scale_color_manual(values = c("Histórico" = "black", "Pronóstico" = "steelblue")) +
+  labs(
+    title = "Pronósticos SARIMAX – Todas las series",
+    x     = "Fecha",
+    y     = "Valor",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.spacing   = unit(1, "lines")
+  )
+print(p_sarimax)
+
+```
+
+### 
