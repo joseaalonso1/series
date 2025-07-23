@@ -78,7 +78,7 @@ Para la elaboración de la base de datos final, primero se procedió con el arma
 ```{r}
 rm(list = ls())
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics, forecast,ggfortify)
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics, forecast,ggfortify, Metrics)
 ```
 
 ```{r}
@@ -1236,4 +1236,88 @@ print(p_sarimax)
 
 ```
 
-### 
+```{r}
+# Leer datos
+arI <- readxl::read_excel("master_base_filtrado.xlsx") %>%
+  janitor::clean_names() %>%
+  dplyr::mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
+  dplyr::arrange(llave)
+
+# Variables dependientes
+dep_vars <- names(arI)[startsWith(names(arI), "y_")]
+
+# Inicializar
+df_all <- list()
+intervalos_all <- list()
+errores <- tibble::tibble()
+
+# Loop
+for (var in dep_vars) {
+  try({
+    ts_data <- stats::ts(arI[[var]], frequency = 12,
+                         start = c(lubridate::year(min(arI$llave)), lubridate::month(min(arI$llave))))
+    
+    cutoff <- length(ts_data) - 5
+    train_ts <- stats::window(ts_data, end = time(ts_data)[cutoff])
+    test_ts <- stats::window(ts_data, start = time(ts_data)[cutoff + 1])
+    
+    fechas_all <- seq(as.Date(zoo::as.yearmon(min(arI$llave))), by = "month", length.out = length(ts_data))
+    fechas_train <- fechas_all[1:cutoff]
+    fechas_test <- fechas_all[(cutoff + 1):length(ts_data)]
+    fechas_forecast <- seq(fechas_test[1], by = "month", length.out = length(test_ts))
+    
+    # Modelo
+    modelo <- forecast::auto.arima(train_ts, seasonal = TRUE, allowdrift = TRUE,
+                                   stepwise = FALSE, approximation = FALSE)
+    
+    fitted_vals <- stats::fitted(modelo)
+    forecast_vals <- forecast::forecast(modelo, h = length(test_ts))
+    
+    df_real <- tibble::tibble(fecha = fechas_train, valor = as.numeric(train_ts), tipo = "Real", variable = var)
+    df_fitted <- tibble::tibble(fecha = fechas_train, valor = as.numeric(fitted_vals), tipo = "Ajustado", variable = var)
+    df_forecast <- tibble::tibble(fecha = fechas_forecast, valor = as.numeric(forecast_vals$mean), tipo = "Pronóstico", variable = var)
+    
+    df_int <- tibble::tibble(
+      fecha = rep(fechas_forecast, 2),
+      valor = c(forecast_vals$lower[, 2], forecast_vals$upper[, 2]),
+      bound = rep(c("LI_95", "LS_95"), each = length(forecast_vals$mean)),
+      variable = var
+    ) %>%
+      tidyr::pivot_wider(names_from = bound, values_from = valor)
+    
+    df_all[[var]] <- dplyr::bind_rows(df_real, df_fitted, df_forecast)
+    intervalos_all[[var]] <- df_int
+    
+    errores <- dplyr::bind_rows(errores, tibble::tibble(
+      variable = var,
+      rmse = Metrics::rmse(test_ts, forecast_vals$mean),
+      mape = Metrics::mape(test_ts, forecast_vals$mean) * 100
+    ))
+    
+    cat(glue::glue("Modelo para {var}: {modelo}\n"))
+    
+  }, silent = TRUE)
+}
+
+# Combinar
+df_plot <- dplyr::bind_rows(df_all)
+df_ints <- dplyr::bind_rows(intervalos_all)
+
+```
+
+```{r}
+#| fig.asp: 0.8
+#| fig.width: 7
+ggplot2::ggplot(df_plot, aes(x = fecha, y = valor, color = tipo)) +
+  geom_ribbon(data = df_ints, aes(x = fecha, ymin = LI_95, ymax = LS_95), 
+              inherit.aes = FALSE, fill = "red", alpha = 0.2) +
+  geom_line(size = 0.9) +
+  facet_wrap(~ variable, scales = "free_y") +
+  scale_color_manual(values = c("Real" = "black", "Ajustado" = "blue", "Pronóstico" = "red")) +
+  labs(title = "Pronóstico ARIMA",
+       x = "Fecha", y = "Valor", color = "Serie") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(face = "bold"))
+
+```
