@@ -17,15 +17,29 @@ execute:
   warning: false
 ---
 
-## Pregunta de investigación
+## Resumen
 
-¿Pueden los modelos de Machine Learning, entrenados con indicadores macroeconómicos, anticipar de manera precisa y oportuna la pérdida esperada futura del sistema crediticio mexicano?
+Este estudio evalúa si los modelos de aprendizaje automático (ML), entrenados con indicadores macroeconómicos, pueden anticipar de manera precisa y oportuna la pérdida esperada en distintos segmentos del sistema crediticio mexicano. Se utilizaron datos provenientes de la CNBV, Banxico, INEGI, IMSS y Google Trends, abarcando variables tradicionales y no convencionales. El análisis considera tanto modelos clásicos de series de tiempo (ARIMA, SARIMA, VAR, Prophet) como enfoques más flexibles basados en árboles de decisión (Bagging, Random Forest, XGBoost). Los resultados muestran que los modelos basados en árboles, al incorporar dinámicas temporales y variables exógenas, superan consistentemente a los modelos tradicionales en términos de precisión predictiva. Este enfoque ofrece una herramienta para el monitoreo del riesgo crediticio y la formulación de políticas macroprudenciales para las instituciones financieras.
 
-## Motivación
+## Introducción
+
+El monitoreo del riesgo crediticio es esencial para preservar la estabilidad del sistema financiero. En contextos de alta incertidumbre macroeconómica, la capacidad de anticipar aumentos en la pérdida esperada de los portafolios crediticios se convierte en una ventaja clave tanto para instituciones financieras como para autoridades regulatorias. Tradicionalmente, este monitoreo se ha basado en modelos econométricos lineales y en evaluaciones periódicas de desempeño. Sin embargo, la creciente disponibilidad de datos de alta frecuencia y herramientas de ML permite explorar alternativas más flexibles y oportunas.
+
+### Pregunta de investigación
+
+Este trabajo busca responder la siguiente pregunta de investigación:
+
+**¿Pueden los modelos de Machine Learning, entrenados con indicadores macroeconómicos, anticipar de manera precisa y oportuna la pérdida esperada futura del sistema crediticio mexicano?**
+
+### Hipótesis
+
+Si las condiciones macroeconómicas tienen un efecto sistemático sobre la evolución del riesgo crediticio, entonces los modelos de aprendizaje automático, al incorporar esta información, deberían ser capaces de anticipar cambios en la pérdida esperada con alta precisión.
+
+### Motivación
 
 Al permitir una identificación temprana de señales de deterioro crediticio, estos modelos se convierten en una herramienta clave tanto para las instituciones financieras como para las autoridades regulatorias, al facilitar la toma de decisiones informadas y el diseño de políticas macroprudenciales orientadas a preservar la estabilidad financiera.
 
-## Variables
+## Datos
 
 En este análisis se utilizaron diferentes variables para entender cómo evoluciona el riesgo crediticio y qué factores pueden influir en él. Por un lado, consideramos las pérdidas esperadas en distintos tipos de créditos (todos de stage 1); por otro, incluimos variables macroeconómicas que ayudan a explicar los cambios en estos riesgos. A continuación, se presentan las variables dependientes e independientes que forman parte del estudio.
 
@@ -61,15 +75,27 @@ Adicionalmente, se incorporan variables obtenidas de Google Trends que reflejan 
 
 12. Google Trends - empleo: Esta variable corresponde al volumen de búsquedas en Google asociadas con el término "empleo", también basada en los datos de Google Trends para México. La inclusión de esta variable permite monitorear en tiempo real el interés de la población por cuestiones relacionadas con el empleo.
 
-## Datos
+## Limpieza de datos
 
 Los datos de cartera y riesgo de crédito se tomaron de la Comisión Nacional Bancaria y de Valores (CNBV), Banxico, IMSS e INEGI, y se complementaron con datos de Google Trends (para búsquedas de "deuda" y "empleo").
 
-### Limpieza de datos
-
 Para la elaboración de la base de datos final, primero se procedió con el armado y la integración de las distintas fuentes de datos, asegurando la identificación correcta de variables numéricas, el ordenamiento de las fechas y la estandarización de formatos para garantizar la homologación entre todas las bases. Posteriormente, se trabajó en la homogeneización de los periodos disponibles, de manera que todas las series coincidieran en la misma frecuencia temporal y pudieran ser analizadas de forma conjunta. Finalmente, para preparar las variables para los análisis de series de tiempo y asegurar la estacionariedad, se aplicó la transformación de primeras diferencias utilizando un rezago mensual (lag de un mes), lo cual permitió obtener series listas para el modelado y la comparación de resultados.
 
-### Análisis Exploratorio de Datos (EDA)
+### Feature Engineering 
+
+Con el fin de capturar adecuadamente las dinámicas temporales inherentes a las series de tiempo financieras en los modelos de ML, se implementó lo siguiente:
+
+-    **Rezagos temporales**: Se calcularon rezagos de 1, 3 y 6 meses tanto para las variables dependientes como para las independientes, lo que permite a los modelos incorporar efectos de corto y mediano plazo.
+
+-    **Promedios móviles**: Se agregaron para suavizar fluctuaciones de alta frecuencia y mejorar la robustez del modelado.
+
+-   **Estacionalidad**: Se codificó el mes del año mediante funciones seno y coseno para capturar posibles patrones estacionales.
+
+-    **Tendencia temporal**: Se introdujo una variable de tendencia lineal creciente para capturar evolución estructural de largo plazo.
+
+-    **Manejo de valores faltantes**: Los valores faltantes generados por los rezagos fueron eliminados, asegurando que el conjunto final de entrenamiento esté completo y no contamine el modelo.
+
+## Análisis Exploratorio de datos (EDA)
 
 ```{r}
 #setwd("/Users/arb/Desktop/PE")
@@ -349,9 +375,9 @@ La matriz de correlación revela fuertes relaciones entre los indicadores macrof
 
 Entre los predictores macroeconómicos, las tasas de interés muestran fuertes correlaciones negativas con todas las variables de pérdida crediticia por lo que tasas más altas coinciden con menores incumplimientos a corto plazo, lo que posiblemente refleja estándares de préstamo más estrictos o efectos de selección. Por el contrario, el tipo de cambio y las tendencias de búsqueda en Google presentan una correlación positiva con las pérdidas crediticias, lo que indica posibles señales de estrés. Estos hallazgos resaltan la importancia del contexto macroeconómico en la modelización del riesgo crediticio.
 
-## Pruebas de estacionariedad
+### Pruebas de estacionariedad
 
-### Prueba de Raíz Unitaria de Dickey & Fuller
+-   **Prueba de Raíz Unitaria de Dickey & Fuller**
 
 La prueba de Dickey-Fuller Aumentada (DFA) se usa para detectar estadísticamente la presencia de conducta tendencial estocástica en las series temporales de las variables mediante un contraste de hipótesis. En nuestro caso, se utilizó la prueba DFA para evaluar la presencia de raíz unitaria en las series temporales de nuestra base de datos. Los resultados indican que, en su mayoría, las series analizadas requieren una transformación mediante primeras diferencias para alcanzar la estacionariedad.
 
