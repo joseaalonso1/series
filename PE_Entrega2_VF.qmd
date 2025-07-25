@@ -81,19 +81,19 @@ Los datos de cartera y riesgo de crédito se tomaron de la Comisión Nacional Ba
 
 Para la elaboración de la base de datos final, primero se procedió con el armado y la integración de las distintas fuentes de datos, asegurando la identificación correcta de variables numéricas, el ordenamiento de las fechas y la estandarización de formatos para garantizar la homologación entre todas las bases. Posteriormente, se trabajó en la homogeneización de los periodos disponibles, de manera que todas las series coincidieran en la misma frecuencia temporal y pudieran ser analizadas de forma conjunta. Finalmente, para preparar las variables para los análisis de series de tiempo y asegurar la estacionariedad, se aplicó la transformación de primeras diferencias utilizando un rezago mensual (lag de un mes), lo cual permitió obtener series listas para el modelado y la comparación de resultados.
 
-### Feature Engineering 
+### Feature Engineering
 
 Con el fin de capturar adecuadamente las dinámicas temporales inherentes a las series de tiempo financieras en los modelos de ML, se implementó lo siguiente:
 
--    **Rezagos temporales**: Se calcularon rezagos de 1, 3 y 6 meses tanto para las variables dependientes como para las independientes, lo que permite a los modelos incorporar efectos de corto y mediano plazo.
+-   **Rezagos temporales**: Se calcularon rezagos de 1, 3 y 6 meses tanto para las variables dependientes como para las independientes, lo que permite a los modelos incorporar efectos de corto y mediano plazo.
 
--    **Promedios móviles**: Se agregaron para suavizar fluctuaciones de alta frecuencia y mejorar la robustez del modelado.
+-   **Promedios móviles**: Se agregaron para suavizar fluctuaciones de alta frecuencia y mejorar la robustez del modelado.
 
 -   **Estacionalidad**: Se codificó el mes del año mediante funciones seno y coseno para capturar posibles patrones estacionales.
 
--    **Tendencia temporal**: Se introdujo una variable de tendencia lineal creciente para capturar evolución estructural de largo plazo.
+-   **Tendencia temporal**: Se introdujo una variable de tendencia lineal creciente para capturar evolución estructural de largo plazo.
 
--    **Manejo de valores faltantes**: Los valores faltantes generados por los rezagos fueron eliminados, asegurando que el conjunto final de entrenamiento esté completo y no contamine el modelo.
+-   **Manejo de valores faltantes**: Los valores faltantes generados por los rezagos fueron eliminados, asegurando que el conjunto final de entrenamiento esté completo y no contamine el modelo.
 
 ## Análisis Exploratorio de datos (EDA)
 
@@ -104,7 +104,7 @@ Con el fin de capturar adecuadamente las dinámicas temporales inherentes a las 
 ```{r}
 rm(list = ls())
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics, forecast,ggfortify, Metrics)
+pacman::p_load(tidyverse, glue, readxl, janitor, lubridate, scales, data.table, kableExtra, tseries, gt, gtExtras, zoo, tibble, knitr, gridExtra, corrplot, caret, rpart, rpart.plot, randomForest, xgboost, rlang, prophet, Metrics, forecast,ggfortify, Metrics,patchwork)
 ```
 
 ```{r}
@@ -121,6 +121,7 @@ I <- I %>%
     balanza = balanza / (10^6),
     remesas = remesas / (10^3),
     puestos_trabajo = puestos_trabajo / (10^6),
+    igoec           = as.numeric(igoec),
     tiie_fondeo = tiie_fondeo / 100
   )
 
@@ -629,7 +630,225 @@ Para el análisis de nuestras variables, planeamos hacer la comparación entre l
 
     -   Consideraciones: Evitar fuga de información temporal ( data leakage), usar variables rezagadas, validar con divisiones temporales adecuadas (walk-forward).
 
+```{=html}
+<!-- -->
+```
+1.  SARIMA
+
+Usamos modelos SARIMA para pronosticar la perdida esperada de portafolio de crédito, como actividad empresarial, nómina y tarjeta. Estos modelos permiten capturar patrones en el tiempo, incluyendo tendencias y cierta estacionalidad. Ajustamos automáticamente, con el uso de autoarima, el modelo más adecuado para cada serie y generamos predicciones a corto plazo. Aunque el ajuste en el periodo histórico fue aceptable, las proyecciones muestran limitaciones y no logran reflejar por completo los ciclos estacionales observados en los datos.
+
 ```{r}
+# Leer datos
+arI <- readxl::read_excel("master_base_filtrado.xlsx") %>%
+  janitor::clean_names() %>%
+  dplyr::mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
+  dplyr::arrange(llave)
+
+# Variables dependientes
+dep_vars <- names(arI)[startsWith(names(arI), "y_")]
+
+# Inicializar
+df_all <- list()
+intervalos_all <- list()
+errores <- tibble::tibble()
+
+# Loop
+for (var in dep_vars) {
+  try({
+    ts_data <- stats::ts(arI[[var]], frequency = 12,
+                         start = c(lubridate::year(min(arI$llave)), lubridate::month(min(arI$llave))))
+    
+    cutoff <- length(ts_data) - 5
+    train_ts <- stats::window(ts_data, end = time(ts_data)[cutoff])
+    test_ts <- stats::window(ts_data, start = time(ts_data)[cutoff + 1])
+    
+    fechas_all <- seq(as.Date(zoo::as.yearmon(min(arI$llave))), by = "month", length.out = length(ts_data))
+    fechas_train <- fechas_all[1:cutoff]
+    fechas_test <- fechas_all[(cutoff + 1):length(ts_data)]
+    fechas_forecast <- seq(fechas_test[1], by = "month", length.out = length(test_ts))
+    
+    # Modelo
+    modelo <- forecast::auto.arima(train_ts, seasonal = TRUE, allowdrift = TRUE,
+                                   stepwise = FALSE, approximation = FALSE)
+    
+    fitted_vals <- stats::fitted(modelo)
+    forecast_vals <- forecast::forecast(modelo, h = length(test_ts))
+    
+    df_real <- tibble::tibble(fecha = fechas_train, valor = as.numeric(train_ts), tipo = "Real", variable = var)
+    df_fitted <- tibble::tibble(fecha = fechas_train, valor = as.numeric(fitted_vals), tipo = "Ajustado", variable = var)
+    df_forecast <- tibble::tibble(fecha = fechas_forecast, valor = as.numeric(forecast_vals$mean), tipo = "Pronóstico", variable = var)
+    
+    df_int <- tibble::tibble(
+      fecha = rep(fechas_forecast, 2),
+      valor = c(forecast_vals$lower[, 2], forecast_vals$upper[, 2]),
+      bound = rep(c("LI_95", "LS_95"), each = length(forecast_vals$mean)),
+      variable = var
+    ) %>%
+      tidyr::pivot_wider(names_from = bound, values_from = valor)
+    
+    df_all[[var]] <- dplyr::bind_rows(df_real, df_fitted, df_forecast)
+    intervalos_all[[var]] <- df_int
+    
+    errores <- dplyr::bind_rows(errores, tibble::tibble(
+      variable = var,
+      rmse = Metrics::rmse(test_ts, forecast_vals$mean),
+      mape = Metrics::mape(test_ts, forecast_vals$mean) * 100
+    ))
+    
+    cat(glue::glue("Modelo para {var}: {modelo}\n"))
+    
+  }, silent = TRUE)
+}
+
+# Combinar
+df_plot <- dplyr::bind_rows(df_all)
+df_ints <- dplyr::bind_rows(intervalos_all)
+
+```
+
+```{r}
+#| fig.asp: 0.8
+#| fig.width: 7
+ggplot2::ggplot(df_plot, aes(x = fecha, y = valor, color = tipo)) +
+  geom_ribbon(data = df_ints, aes(x = fecha, ymin = LI_95, ymax = LS_95), 
+              inherit.aes = FALSE, fill = "red", alpha = 0.2) +
+  geom_line(size = 0.9) +
+  facet_wrap(~ variable, scales = "free_y") +
+  scale_color_manual(values = c("Real" = "black", "Ajustado" = "blue", "Pronóstico" = "red")) +
+  labs(title = "Pronóstico ARIMA",
+       x = "Fecha", y = "Valor", color = "Serie") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        strip.text = element_text(face = "bold"))
+
+```
+
+2.  SARIMAX
+
+A diferencia del SARIMA, el modelo SARIMAX incorpora variables externas (en este caso hemos ocupado todas nuestras variables exogenas disponibles) que influyen en el comportamiento de los créditos. Al integrarlas, las proyecciones muestran mayor sensibilidad a los cambios económicos y capturan mejor la dinámica reciente. En general, las predicciones de SARIMAX resultaron más alineadas con los patrones observados, especialmente en series con mayor variabilidad.
+
+```{r}
+# — 1) Leer y limpiar datos
+Imx <- read_excel("master_base_filtrado.xlsx") %>%
+  janitor::clean_names() %>%
+  mutate(
+    m1              = m1 / 1e6,
+    m2              = m2 / 1e6,
+    m3              = m3 / 1e6,
+    balanza         = balanza / 1e6,
+    remesas         = remesas / 1e3,
+    puestos_trabajo = puestos_trabajo / 1e6,
+    tiie_fondeo     = tiie_fondeo / 100,
+    llave           = zoo::as.yearmon(llave)
+  ) %>%
+  arrange(llave)
+
+# — 2) Definir series objetivo y exógenas
+targets <- c(
+  "y_pe_actividad_empresarial_o_comercial",
+  "y_pe_automotriz",
+  "y_pe_entidades_financieras",
+  "y_pe_nomina",
+  "y_pe_personales",
+  "y_pe_tarjeta_de_credito"
+)
+exogs <- c(
+  "usd_mxn","tiie_fondeo","remesas",
+  "m1","m2","m3","balanza",
+  "inpc","igoec","igae",
+  "google_deuda","google_empleo",
+  "puestos_trabajo","s_p_bmv_ipc","s_p_500"
+)
+
+# — 3) Inicializar lista de resultados
+df_list_sarimax <- list()
+
+# — 4) Loop de modelado SARIMAX
+for (tgt in targets) {
+  name_pretty <- str_to_title(str_replace_all(tgt, "y_pe_|_", " "))
+
+  df1 <- Imx %>%
+    dplyr::select(llave, all_of(tgt), all_of(exogs)) %>%
+    drop_na()
+  if (nrow(df1) < 24) next
+
+  df1[exogs] <- lapply(df1[exogs], as.numeric)
+
+  ts1   <- ts(df1[[tgt]], start = c(lubridate::year(min(df1$llave)), lubridate::month(min(df1$llave))), frequency = 12)
+  xreg1 <- as.matrix(df1[exogs])
+
+  fit_sarimax <- tryCatch(
+    forecast::auto.arima(ts1, xreg = xreg1, seasonal = TRUE),
+    error = function(e) NULL
+  )
+  if (is.null(fit_sarimax)) next
+
+  fc_sarimax <- tryCatch(
+    forecast::forecast(fit_sarimax, xreg = tail(xreg1, 12), h = 12),
+    error = function(e) NULL
+  )
+  if (is.null(fc_sarimax) || is.null(fc_sarimax$lower) || ncol(fc_sarimax$lower) < 2) next
+
+  df_hist_x <- tibble(
+    fecha    = zoo::as.Date(df1$llave),
+    valor    = df1[[tgt]],
+    variable = name_pretty,
+    type     = "Histórico"
+  )
+
+  fdates_x <- seq(
+    from = max(zoo::as.Date(df1$llave)) %m+% months(1),
+    by   = "month",
+    length.out = 12
+  )
+
+  df_fc_x <- tibble(
+    fecha    = fdates_x,
+    valor    = as.numeric(fc_sarimax$mean),
+    lo95     = fc_sarimax$lower[, 2],
+    hi95     = fc_sarimax$upper[, 2],
+    variable = name_pretty,
+    type     = "Pronóstico"
+  )
+
+  df_all <- bind_rows(df_hist_x, df_fc_x)
+  df_list_sarimax[[tgt]] <- df_all
+}
+
+# — 5) Unir resultados
+plot_df_sarimax <- bind_rows(df_list_sarimax) %>%
+  mutate(type = factor(type, levels = c("Histórico", "Pronóstico")))
+
+p_sarimax <- ggplot(plot_df_sarimax, aes(fecha, valor, color = type)) +
+  geom_line() +
+  geom_ribbon(
+    data = filter(plot_df_sarimax, type == "Pronóstico"),
+    aes(ymin = lo95, ymax = hi95),
+    fill = "steelblue", alpha = 0.2, color = NA
+  ) +
+  facet_wrap(~variable, ncol = 3, scales = "free_y") +
+  scale_x_date(date_breaks = "6 months", date_labels = "%Y-%m") +
+  scale_color_manual(values = c("Histórico" = "black", "Pronóstico" = "steelblue")) +
+  labs(
+    title = "Pronósticos SARIMAX – Todas las series",
+    x     = "Fecha",
+    y     = "Valor",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.spacing   = unit(1, "lines"),
+    axis.text.x     = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  )
+
+print(p_sarimax)
+```
+
+3.  Arboles
+
+```{r}
+
 # Function to add time features and lag variables
 add_features <- function(data, target, lags = 1:3) {
   df <- data %>%
@@ -988,7 +1207,7 @@ Prophet destaca donde predominan los patrones estructurales: su detección de pu
 
 5.  **VAR**
 
-    El modelo VAR (Vector Autoregresivo) es una herramienta econométrica diseñada para capturar las interrelaciones dinámicas entre múltiples series temporales. A diferencia de los modelos univariados, el VAR permite que cada variable del sistema sea explicada no solo por sus propios rezagos, sino también por los rezagos de las demás variables incluidas. El supuesto fundamental es que todas las variables son tratadas como endógenas y que la estructura de rezagos resume adecuadamente la dinámica del sistema.
+    El modelo VAR (Vector Autoregresivo) es una herramienta econométrica diseñada para capturar las interdependencias dinámicas entre múltiples series temporales endógenas. A diferencia de los modelos univariados como SARIMA o SARIMAX, el VAR permite que cada variable sea explicada por sus propios rezagos y por los rezagos de las demás variables del sistema. Como complemento a los modelos individuales previamente estimados, se implementó un VAR en primeras diferencias para analizar el comportamiento conjunto de las series. Este modelo logró proyectar trayectorias con ciclos coherentes y consistentes con las dinámicas observadas en el pasado reciente, capturando adecuadamente la comovilidad entre las series consideradas.
 
 ```{r}
 #| fig.asp: 0.8
@@ -1083,267 +1302,58 @@ df_final <- full_join(df_real_long, df_pred_long, by = c("llave", "variable")) %
 
 ```
 
-### SARIMA y SARIMAX
-
 ```{r}
-# — 0) Cargar librerías y limpiar workspace
-rm(list = ls())
-if (!require("pacman")) install.packages("pacman")
-pacman::p_load(dplyr,ggplot2, stringr, tidyr)
+#| fig.width: 8
+#| fig.asp: 0.7
 
+# 1. Valores ajustados
+fitted_vals <- as.data.frame(fitted(modelo_var))
+fitted_vals$llave <- df_diff$llave[(nrow(df_diff) - nrow(fitted_vals) + 1):nrow(df_diff)]
+df_fitted_long <- fitted_vals %>%
+  pivot_longer(-llave, names_to = "variable", values_to = "ajustado")
 
-# — 2) Leer y limpiar datos
-I <- read_excel("master_base_filtrado.xlsx") %>%
-  clean_names() %>%
-  mutate(
-    m1               = m1 / 1e6,
-    m2               = m2 / 1e6,
-    m3               = m3 / 1e6,
-    balanza          = balanza / 1e6,
-    remesas          = remesas / 1e3,
-    puestos_trabajo  = puestos_trabajo / 1e6,
-    tiie_fondeo      = tiie_fondeo / 100,
-    llave            = ym(llave)
-  ) %>%
-  arrange(llave)
+# 2. Valores reales recientes
+df_real_long <- df_diff %>%
+  filter(llave >= (max(llave) - 7/12)) %>%
+  pivot_longer(-llave, names_to = "variable", values_to = "real")
 
-
-# — 3) Definir series objetivo y exógenas
-targets <- c(
-  "y_pe_actividad_empresarial_o_comercial",
-  "y_pe_automotriz",
-  "y_pe_entidades_financieras",
-  "y_pe_nomina",
-  "y_pe_personales",
-  "y_pe_tarjeta_de_credito"
-)
-exogs <- c(
-  "usd_mxn","tiie_fondeo","remesas",
-  "m1","m2","m3","balanza",
-  "inpc","igoec","igae",
-  "google_deuda","google_empleo",
-  "puestos_trabajo","s_p_bmv_ipc","s_p_500"
-)
-# — 1) Listas vacías para apilar resultados
-#df_list_sarima  <- list()
-df_list_sarimax <- list()
-
-# — 2) Loop sobre cada serie objetivo
-for (tgt in targets) {
-  # Nombre legible para títulos y facetas
-  name_pretty <- str_to_title(str_replace_all(tgt, "y_pe_|_", " "))
-  
-  # — Datos históricos sin NAs
-  df0 <- I %>% dplyr::select(llave, all_of(tgt)) %>% drop_na()
-  ts0 <- ts(df0[[tgt]],
-            start     = c(year(min(df0$llave)), month(min(df0$llave))),
-            frequency = 12)
-  
-  # —— A) SARIMA puro (seasonal=TRUE) ——
- # fit_sarima  <- auto.arima(ts0, seasonal = TRUE)
- # fc_sarima   <- forecast(fit_sarima, h = 12)
-  
-  # Gráfica individual SARIMA
- # plot(fc_sarima,
- #      main = paste0("SARIMA – ", name_pretty),
- #      xlab = "Año", ylab = "Valor")
-  #lines(ts0, col = "black")
-  
-  # Preparo tibble histórico + forecast
-# df_hist_s   <- tibble(
-#   fecha    = df0$llave,
-#   valor    = df0[[tgt]],
-#   variable = name_pretty,
-#   type     = "Histórico"
-# )
-# fdates_s    <- seq(max(df0$llave) %m+% months(1),
-#                    by = "month", length.out = 12)
-# df_fc_s     <- tibble(
-#   fecha    = fdates_s,
-#   valor    = as.numeric(fc_sarima$mean),
-#   lo95     = fc_sarima$lower[,2],
-#   hi95     = fc_sarima$upper[,2],
-#   variable = name_pretty,
-#   type     = "Pronóstico"
-# )
-# df_list_sarima[[tgt]] <- bind_rows(df_hist_s, df_fc_s)
-# 
-  # —— B) SARIMAX con exógenas ——
-  df1 <- I %>% dplyr::select(llave, all_of(tgt), all_of(exogs)) %>% drop_na()
-  # Aseguro numéricas
-  df1[exogs] <- lapply(df1[exogs], as.numeric)
-  ts1 <- ts(df1[[tgt]],
-            start     = c(year(min(df1$llave)), month(min(df1$llave))),
-            frequency = 12)
-  xreg1 <- as.matrix(df1[exogs])
-  
-  fit_sarimax <- auto.arima(ts1, xreg = xreg1, seasonal = TRUE)
-  fc_sarimax  <- forecast(fit_sarimax, xreg = tail(xreg1,12), h = 12)
-  
-  # Gráfica individual SARIMAX
-  plot(fc_sarimax,
-       main = paste0("SARIMAX – ", name_pretty),
-       xlab = "Año", ylab = "Valor")
-  lines(ts1, col = "black")
-  
-  # Preparo tibble histórico + forecast
-  df_hist_x   <- tibble(
-    fecha    = df1$llave,
-    valor    = df1[[tgt]],
-    variable = name_pretty,
-    type     = "Histórico"
-  )
-  fdates_x    <- seq(max(df1$llave) %m+% months(1),
-                     by = "month", length.out = 12)
-  df_fc_x     <- tibble(
-    fecha    = fdates_x,
-    valor    = as.numeric(fc_sarimax$mean),
-    lo95     = fc_sarimax$lower[,2],
-    hi95     = fc_sarimax$upper[,2],
-    variable = name_pretty,
-    type     = "Pronóstico"
-  )
-  df_list_sarimax[[tgt]] <- bind_rows(df_hist_x, df_fc_x)
+# 3. Pronóstico ya calculado
+fechas_futuras <- seq(max(df_diff$llave) + 1/12, by = 1/12, length.out = length(predicciones$fcst[[1]][,1]))
+pred_df <- data.frame(llave = fechas_futuras)
+for (var in names(predicciones$fcst)) {
+  pred_df[[var]] <- predicciones$fcst[[var]][, "fcst"]
 }
+df_forecast_long <- pred_df %>%
+  pivot_longer(-llave, names_to = "variable", values_to = "forecast")
 
-# — 3) Crear data.frames para facetas
-#plot_df_sarima  <- bind_rows(df_list_sarima)  %>%
-#  mutate(type = factor(type, levels = c("Histórico"#,"Pronóstico")))
-plot_df_sarimax <- bind_rows(df_list_sarimax) %>%
-  mutate(type = factor(type, levels = c("Histórico","Pronóstico")))
-
-## — 4) Facetas SARIMA (2 filas × 3 columnas)
-#p_sarima <- ggplot(plot_df_sarima, aes(fecha, valor, #color = type)) +
-#  geom_line() +
-#  geom_ribbon(
-#    data = filter(plot_df_sarima, type == "Pronóstico"),
-#    aes(ymin = lo95, ymax = hi95),
-#    fill = "steelblue", alpha = 0.2, color = NA
-#  ) +
-#  facet_wrap(~variable, ncol = 3, scales = "free_y") +
-#  scale_x_date(date_breaks = "6 months", date_labels = #"%Y-%m") +
-#  scale_color_manual(values = c("Histórico" = "black", #"Pronóstico" = "steelblue")) +
-#  labs(
-#    title = "Pronósticos SARIMA – Todas las series",
-#    x     = "Fecha",
-#    y     = "Valor",
-#    color = NULL
-#  ) +
-#  theme_minimal(base_size = 12) +
-#  theme(
-#    legend.position = "bottom",
-#    panel.spacing   = unit(1, "lines")
-#  )
-#print(p_sarima)
-#
-# — 5) Facetas SARIMAX (2 filas × 3 columnas)
-p_sarimax <- ggplot(plot_df_sarimax, aes(fecha, valor, color = type)) +
-  geom_line() +
-  geom_ribbon(
-    data = filter(plot_df_sarimax, type == "Pronóstico"),
-    aes(ymin = lo95, ymax = hi95),
-    fill = "steelblue", alpha = 0.2, color = NA
-  ) +
-  facet_wrap(~variable, ncol = 3, scales = "free_y") +
-  scale_x_date(date_breaks = "6 months", date_labels = "%Y-%m") +
-  scale_color_manual(values = c("Histórico" = "black", "Pronóstico" = "steelblue")) +
-  labs(
-    title = "Pronósticos SARIMAX – Todas las series",
-    x     = "Fecha",
-    y     = "Valor",
-    color = NULL
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    legend.position = "bottom",
-    panel.spacing   = unit(1, "lines")
-  )
-print(p_sarimax)
-
-```
-
-```{r}
-# Leer datos
-arI <- readxl::read_excel("master_base_filtrado.xlsx") %>%
-  janitor::clean_names() %>%
-  dplyr::mutate(llave = zoo::as.yearmon(as.character(llave), "%Y-%m")) %>%
-  dplyr::arrange(llave)
-
-# Variables dependientes
-dep_vars <- names(arI)[startsWith(names(arI), "y_")]
-
-# Inicializar
-df_all <- list()
-intervalos_all <- list()
-errores <- tibble::tibble()
-
-# Loop
-for (var in dep_vars) {
-  try({
-    ts_data <- stats::ts(arI[[var]], frequency = 12,
-                         start = c(lubridate::year(min(arI$llave)), lubridate::month(min(arI$llave))))
-    
-    cutoff <- length(ts_data) - 5
-    train_ts <- stats::window(ts_data, end = time(ts_data)[cutoff])
-    test_ts <- stats::window(ts_data, start = time(ts_data)[cutoff + 1])
-    
-    fechas_all <- seq(as.Date(zoo::as.yearmon(min(arI$llave))), by = "month", length.out = length(ts_data))
-    fechas_train <- fechas_all[1:cutoff]
-    fechas_test <- fechas_all[(cutoff + 1):length(ts_data)]
-    fechas_forecast <- seq(fechas_test[1], by = "month", length.out = length(test_ts))
-    
-    # Modelo
-    modelo <- forecast::auto.arima(train_ts, seasonal = TRUE, allowdrift = TRUE,
-                                   stepwise = FALSE, approximation = FALSE)
-    
-    fitted_vals <- stats::fitted(modelo)
-    forecast_vals <- forecast::forecast(modelo, h = length(test_ts))
-    
-    df_real <- tibble::tibble(fecha = fechas_train, valor = as.numeric(train_ts), tipo = "Real", variable = var)
-    df_fitted <- tibble::tibble(fecha = fechas_train, valor = as.numeric(fitted_vals), tipo = "Ajustado", variable = var)
-    df_forecast <- tibble::tibble(fecha = fechas_forecast, valor = as.numeric(forecast_vals$mean), tipo = "Pronóstico", variable = var)
-    
-    df_int <- tibble::tibble(
-      fecha = rep(fechas_forecast, 2),
-      valor = c(forecast_vals$lower[, 2], forecast_vals$upper[, 2]),
-      bound = rep(c("LI_95", "LS_95"), each = length(forecast_vals$mean)),
-      variable = var
-    ) %>%
-      tidyr::pivot_wider(names_from = bound, values_from = valor)
-    
-    df_all[[var]] <- dplyr::bind_rows(df_real, df_fitted, df_forecast)
-    intervalos_all[[var]] <- df_int
-    
-    errores <- dplyr::bind_rows(errores, tibble::tibble(
-      variable = var,
-      rmse = Metrics::rmse(test_ts, forecast_vals$mean),
-      mape = Metrics::mape(test_ts, forecast_vals$mean) * 100
-    ))
-    
-    cat(glue::glue("Modelo para {var}: {modelo}\n"))
-    
-  }, silent = TRUE)
-}
-
-# Combinar
-df_plot <- dplyr::bind_rows(df_all)
-df_ints <- dplyr::bind_rows(intervalos_all)
-
-```
-
-```{r}
-#| fig.asp: 0.8
-#| fig.width: 7
-ggplot2::ggplot(df_plot, aes(x = fecha, y = valor, color = tipo)) +
-  geom_ribbon(data = df_ints, aes(x = fecha, ymin = LI_95, ymax = LS_95), 
-              inherit.aes = FALSE, fill = "red", alpha = 0.2) +
+# 4. Unir todo en formato largo
+df_plot <- bind_rows(
+  df_real_long %>% mutate(tipo = "Real", valor = real),
+  df_fitted_long %>% mutate(tipo = "Ajustado", valor = ajustado),
+  df_forecast_long %>% mutate(tipo = "Pronóstico", valor = forecast)
+) %>%
+  mutate(valor_bps = valor * 10000)
+# 5. Filtrar desde enero 2024
+df_plot <- df_plot %>%
+  filter(llave >= zoo::as.yearmon("2024-01"))
+# 5. Gráfica
+ggplot(df_plot, aes(x = llave, y = valor_bps, color = tipo, linetype = tipo)) +
   geom_line(size = 0.9) +
-  facet_wrap(~ variable, scales = "free_y") +
-  scale_color_manual(values = c("Real" = "black", "Ajustado" = "blue", "Pronóstico" = "red")) +
-  labs(title = "Pronóstico ARIMA",
-       x = "Fecha", y = "Valor", color = "Serie") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        strip.text = element_text(face = "bold"))
+  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+  theme_minimal(base_size = 11) +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    panel.spacing = unit(1, "lines")
+  ) +
+  labs(
+    title = "Modelo VAR – Serie Real, Ajustada y Pronóstico",
+    x = "Mes",
+    y = "Variación mensual (bps)",
+    color = "", linetype = ""
+  ) +
+  scale_color_manual(values = c("Real" = "black", "Ajustado" = "gray40", "Pronóstico" = "blue")) +
+  scale_linetype_manual(values = c("Real" = "solid", "Ajustado" = "solid", "Pronóstico" = "dashed"))
+
 
 ```
