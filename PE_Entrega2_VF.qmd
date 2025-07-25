@@ -630,12 +630,33 @@ Para el análisis de nuestras variables, planeamos hacer la comparación entre l
 
     -   Consideraciones: Evitar fuga de información temporal ( data leakage), usar variables rezagadas, validar con divisiones temporales adecuadas (walk-forward).
 
-```{=html}
-<!-- -->
-```
-1.  SARIMA
+## SARIMA
 
 Usamos modelos SARIMA para pronosticar la perdida esperada de portafolio de crédito, como actividad empresarial, nómina y tarjeta. Estos modelos permiten capturar patrones en el tiempo, incluyendo tendencias y cierta estacionalidad. Ajustamos automáticamente, con el uso de autoarima, el modelo más adecuado para cada serie y generamos predicciones a corto plazo. Aunque el ajuste en el periodo histórico fue aceptable, las proyecciones muestran limitaciones y no logran reflejar por completo los ciclos estacionales observados en los datos.
+
+Para el pronóstico de la \*\*pérdida esperada del portafolio de crédito\*\* se utiliza la La forma funcional general de un modelo SARIMA $\ (p,d,q)(P,D,Q)_s$ se expresa como:
+
+$$
+\Phi_P (L^s) \, \phi_p (L) (1 - L)^d (1 - L^s)^D y_t=\Theta_Q (L^s) \, \theta_q (L) \, \varepsilon_t
+$$
+
+donde:
+
+\- $\ p, d, q$ representan el orden del modelo ARIMA (autoregresivo, diferencia y promedio móvil),
+
+\- $\ (P, D, Q)$ representan el orden de los componentes estacionales,
+
+\- $\ (s)$ es la periodicidad de la estacionalidad (por ejemplo, 12 para datos mensuales),
+
+\- $\ (phi_p(L)$ y $\ (Phi_P(L^s)$ son los polinomios autorregresivos,
+
+\- $\ (theta_q(L)$ y $\ (\Theta_Q(L^s)$ son los polinomios de promedio móvil,
+
+\- $\ (L)$ es el operador de rezago,
+
+\- $\ (varepsilon_t)$ es el término de error en el periodo \\(t\\).
+
+A continuación se muestra el resultado del modelo ajustado automáticamente (usando \`auto.arima\`) y las predicciones a corto plazo:
 
 ```{r}
 # Leer datos
@@ -723,7 +744,7 @@ ggplot2::ggplot(df_plot, aes(x = fecha, y = valor, color = tipo)) +
 
 ```
 
-2.  SARIMAX
+## SARIMAX
 
 A diferencia del SARIMA, el modelo SARIMAX incorpora variables externas (en este caso hemos ocupado todas nuestras variables exogenas disponibles) que influyen en el comportamiento de los créditos. Al integrarlas, las proyecciones muestran mayor sensibilidad a los cambios económicos y capturan mejor la dinámica reciente. En general, las predicciones de SARIMAX resultaron más alineadas con los patrones observados, especialmente en series con mayor variabilidad.
 
@@ -845,7 +866,7 @@ p_sarimax <- ggplot(plot_df_sarimax, aes(fecha, valor, color = type)) +
 print(p_sarimax)
 ```
 
-3.  Arboles
+## Árboles
 
 ```{r}
 
@@ -1097,13 +1118,65 @@ do.call(grid.arrange, c(plots, ncol = 2))
 
 Dado que los modelos basados en árboles no consideran inherentemente patrones temporales, diseñamos características adicionales para codificar explícitamente la dinámica temporal. Estas incluyeron rezagos de 1, 3 y 6 meses tanto para los objetivos como para los predictores, promedios móviles para suavizar la volatilidad local, indicadores estacionales (mes del año, estacionalidad seno/coseno) y una variable de tendencia temporal lineal. Tras eliminar los valores faltantes generados por el rezago, construimos un conjunto de datos de entrenamiento para el aprendizaje supervisado.
 
-Implementamos y comparamos cuatro modelos para cada variable objetivo: un árbol de decisión podado, bagging (mediante bosques aleatorios con muestreo completo de variables), un bosque aleatorio estándar y XGBoost. Cada modelo se entrenó con el primer 80 % de los datos ordenados temporalmente y se evaluó con el 20 % restante, utilizando RMSE como métrica de rendimiento. Los resultados mostraron que los métodos de conjunto, en particular los bosques aleatorios y XGBoost, superaron consistentemente a los árboles de decisión individuales, reduciendo considerablemente el error de pronóstico.
+Implementamos y comparamos cuatro modelos para cada variable objetivo: un árbol de decisión podado, bagging (mediante bosques aleatorios con muestreo completo de variables), un bosque aleatorio estándar y XGBoost.
+
+#### Árboles de Decisión para Regresión
+
+La predicción de un árbol de decisión se basa en dividir el espacio de las variables independientes en regiones disjuntas $R_1, R_2, \dots, R_M$, y asignar a cada región una predicción constante igual al promedio de los valores de la variable objetivo en dicha región:
+
+$$
+ \hat{f}(x) = \frac{1}{|R_l|} \sum_{i \in R_l} y_i
+$$
+
+La partición se construye recursivamente, seleccionando en cada paso la variable y punto de corte que minimizan el error cuadrático dentro de las particiones resultantes. Esto se formaliza con el criterio de suma residual de cuadrados (RSS):
+
+$$
+RSS = \sum_{i \in R_1} (y_i - \bar{y}{R_1}^2 + \sum{i \in R_2} (y_i - \bar{y}_{R_2})^2   
+$$
+
+Random Forest
+
+Random Forest es un método de ensamblado (ensemble) que promedia múltiples árboles de decisión, entrenados sobre muestras bootstrap del conjunto de datos y con una selección aleatoria de variables en cada división. La predicción final es:
+
+$$
+\hat{f}_{RF}(x) = \frac{1}{B} \sum{b=1}^{B} \hat{f}^{(b)}(x) 
+$$
+
+Este método reduce la varianza del modelo sin aumentar sustancialmente el sesgo, mejorando así su capacidad de generalización.
+
+Gradient Boosting y XG Boost
+
+Gradient Boosting entrena secuencialmente árboles que corrigen los errores del modelo ensamblado hasta ese punto:
+
+$$
+F_m(x) = F_{m-1}(x) + \eta \cdot h_m(x)
+$$
+
+$F_m(x)$: modelo total después de \$m\$ interaciones,
+
+$h_m(x)$: nuevo árbol que ajusta los residuos,
+
+$\eta$: tasa de aprendizaje o shrinkage
+
+XGBoost, una versión optimizada de boosting, agrega regularización explícita para controlar la complejidad del modelo. La función objetivo general es:
+
+$$
+\mathcal{L}{t} = \sum_{i=1}^{n} l(y_i, \hat{y}i{(t)}) + \sum{k=1}^{T} \left( \gamma + \frac{1}{2} \lambda w_k^2 \right) 
+$$
+
+$l(\cdot)$: función de pérdida (ej. error cuadrático),
+
+$T$: número de hojas en el árbol,
+
+$w_k$: peso de la $k$-ésima hoja,
+
+$\gamma$, $\lambda$: hiperparámetros de regularización.
+
+Cada modelo se entrenó con el primer 80 % de los datos ordenados temporalmente y se evaluó con el 20 % restante, utilizando RMSE como métrica de rendimiento. Los resultados mostraron que los métodos de conjunto, en particular los bosques aleatorios y XGBoost, superaron consistentemente a los árboles de decisión individuales, reduciendo considerablemente el error de pronóstico.
 
 Una vez identificado el mejor modelo para cada objetivo, lo reentrenamos utilizando toda la muestra histórica y generamos pronósticos con cinco meses de antelación.
 
-En general, este enfoque demostró que los modelos de aprendizaje automático, cuando se diseñan cuidadosamente para incorporar la estructura temporal, pueden proporcionar pronósticos robustos, interpretables y oportunos de pérdidas crediticias.
-
-4.  **Prophet**
+## Prophet
 
 ```{r}
 run_prophet <- function(df, target, cutoff_frac = 0.8, horizon = 5) {
@@ -1205,9 +1278,27 @@ Prophet es un modelo estructural de series temporales diseñado para gestionar a
 
 Prophet destaca donde predominan los patrones estructurales: su detección de puntos de cambio se adapta rápidamente a los cambios de tendencia, y la estacionalidad multiplicativa escala de forma natural las fluctuaciones estacionales a medida que aumenta la magnitud de la serie. Normalmente, igualó o superó a nuestros modelos de árbol en segmentos con una estacionalidad fuerte y regular o cambios de tendencia pronunciados, como las pérdidas por préstamos de nómina que aumentan cíclicamente. Sin embargo, cuando los efectos autorregresivos de corto retardo (por ejemplo, las pérdidas del mes inmediatamente anterior) fueron el factor principal, nuestros conjuntos de Bosque Aleatorio y XGBoost a menudo superaron a Prophet al aprovechar directamente esas características de retardo diseñadas.
 
-5.  **VAR**
+## VAR
 
-    El modelo VAR (Vector Autoregresivo) es una herramienta econométrica diseñada para capturar las interdependencias dinámicas entre múltiples series temporales endógenas. A diferencia de los modelos univariados como SARIMA o SARIMAX, el VAR permite que cada variable sea explicada por sus propios rezagos y por los rezagos de las demás variables del sistema. Como complemento a los modelos individuales previamente estimados, se implementó un VAR en primeras diferencias para analizar el comportamiento conjunto de las series. Este modelo logró proyectar trayectorias con ciclos coherentes y consistentes con las dinámicas observadas en el pasado reciente, capturando adecuadamente la comovilidad entre las series consideradas.
+El modelo VAR (Vector Autoregresivo) es una herramienta econométrica diseñada para capturar las interdependencias dinámicas entre múltiples series temporales endógenas. A diferencia de los modelos univariados como SARIMA o SARIMAX, el VAR permite que cada variable sea explicada por sus propios rezagos y por los rezagos de las demás variables del sistema. Como complemento a los modelos individuales previamente estimados, se implementó un VAR en primeras diferencias para analizar el comportamiento conjunto de las series. Este modelo logró proyectar trayectorias con ciclos coherentes y consistentes con las dinámicas observadas en el pasado reciente, capturando adecuadamente la comovilidad entre las series consideradas.
+
+Para el análisis se emplea un modelo de \*\*Vectores Autorregresivos (VAR)\*\* con rezagos \\( p = 4 \\), el cual permite modelar la dinámica conjunta de las variables endógenas seleccionadas (todas aquellas cuyo nombre comienza con \`y\_\`). En términos funcionales, el modelo puede expresarse como:
+
+$$
+\mathbf{y}_t = \mathbf{c} + A_1 \mathbf{y}_{t-1} + A_2 \mathbf{y}_{t-2} + A_3 \mathbf{y}_{t-3} + A_4 \mathbf{y}_{t-4} + \mathbf{u}_t
+$$
+
+donde:
+
+\- $\mathbf{y}_t$ es el vector de variables endógenas en el tiempo \\( t \\),
+
+\- $\mathbf{c}$ es el vector de constantes,
+
+\-$\ A_i$ son las matrices de coeficientes para cada rezago \\( i \\),
+
+\- $\mathbf{u}_t$ es el vector de perturbaciones o errores.
+
+A continuación se muestra el el resultado ajustado por el modelo y las predicciones:
 
 ```{r}
 #| fig.asp: 0.8
