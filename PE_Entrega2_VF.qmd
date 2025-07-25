@@ -19,7 +19,7 @@ execute:
 
 ## Resumen
 
-Este estudio evalúa si los modelos de aprendizaje automático (ML), entrenados con indicadores macroeconómicos, pueden anticipar de manera precisa y oportuna la pérdida esperada en distintos segmentos del sistema crediticio mexicano. Se utilizaron datos provenientes de la CNBV, Banxico, INEGI, IMSS y Google Trends, abarcando variables tradicionales y no convencionales. El análisis considera tanto modelos clásicos de series de tiempo (ARIMA, SARIMA, VAR, Prophet) como enfoques más flexibles basados en árboles de decisión (Bagging, Random Forest, XGBoost). Los resultados muestran que los modelos basados en árboles, al incorporar dinámicas temporales y variables exógenas, superan consistentemente a los modelos tradicionales en términos de precisión predictiva. Este enfoque ofrece una herramienta para el monitoreo del riesgo crediticio y la formulación de políticas macroprudenciales para las instituciones financieras.
+Este estudio evalúa si los modelos de aprendizaje automático (ML, por sus siglas en inglés), entrenados con indicadores macroeconómicos, pueden anticipar de manera precisa y oportuna la pérdida esperada en distintos segmentos del sistema crediticio mexicano. Se utilizaron datos provenientes de la CNBV, Banxico, INEGI, IMSS y Google Trends, abarcando variables tradicionales y no convencionales. El análisis considera tanto modelos clásicos de series de tiempo (SARIMA, SARIMAX, VAR, Prophet) como enfoques más flexibles basados en árboles de decisión (Bagging, Random Forest, XGBoost). Los resultados muestran que los modelos basados en árboles, al incorporar dinámicas temporales y variables exógenas, superan consistentemente a los modelos tradicionales en términos de precisión predictiva. Este enfoque ofrece una herramienta para el monitoreo del riesgo crediticio y la formulación de políticas macroprudenciales para las instituciones financieras.
 
 ## Introducción
 
@@ -45,7 +45,7 @@ En este análisis se utilizaron diferentes variables para entender cómo evoluci
 
 ### Variables dependientes
 
-Las variables dependientes utilizadas en este análisis corresponden a la pérdida esperada en distintos segmentos del sistema crediticio mexicano, expresadas como porcentaje de los portafolios correspondientes. Separar la variable dependiente según el tipo de portafolio crediticio permite observar la heterogeneidad de riesgo en cada segmento de crédito, lo cual es fundamental tanto para mejorar la capacidad predictiva de los modelos como para hacer recomendaciones puntuales de políticas y estrategias de mitigación que sean más específicas y efectivas. Las variables dependientes son:
+Las variables dependientes utilizadas en este análisis corresponden a la pérdida esperada en distintos segmentos del sistema crediticio mexicano, expresadas como porcentaje de los portafolios correspondientes. La ventaja de separar la variable dependiente según el tipo de portafolio crediticio permite observar la heterogeneidad de riesgo en cada segmento de crédito, lo cual es fundamental tanto para mejorar la capacidad predictiva de los modelos como para hacer recomendaciones puntuales de políticas y estrategias de mitigación que sean más específicas y efectivas. Las variables dependientes son:
 
 1.  Pérdida esperada - actividad empresarial o comercial: Representa la pérdida esperada asociada a créditos otorgados para actividades empresariales o comerciales, reflejando el riesgo crediticio en el sector productivo.
 2.  Pérdida esperada - automotriz: Mide la pérdida esperada en el portafolio de créditos automotrices, es decir, aquellos destinados a la compra de vehículos.
@@ -609,32 +609,47 @@ vars_rest_diff %>%
 
 ## Modelado
 
-Para el análisis de nuestras variables, planeamos hacer la comparación entre los siguientes modelos:
+Para el análisis de nuestras variables, hicimos los siguientes modelos:
 
-1.  **ARIMA**
-    -   Objetivo: Modelar y predecir la dinámica interna de una sola serie temporal de pérdida esperada, sirviendo como línea base clásica.
+1.  **SARIMA/SARIMAX**
 
-    -   Ventajas: Capta patrones autorregresivos, tendencias y ciclos; es ampliamente aceptado y fácil de interpretar.
-
-    -   Consideraciones: La serie debe ser estacionaria; seleccionar correctamente los parámetros (p, d, q); revisar residuos.
-2.  **SARIMA**
     -   Objetivo: Incorporar patrones estacionales en series de tiempo, útil si las pérdidas presentan estacionalidad o ciclos repetitivos.
 
     -   Ventajas: Captura tanto dinámica general como efectos estacionales; permite predecir en presencia de ciclos regulares.
 
     -   Consideraciones: Identificar y ajustar adecuadamente componentes estacionales (P, D, Q, s); asegurar estacionariedad.
-3.  **Métodos basados en árboles**
+
+    -   SARIMAX: Incorpora variables externas que influyen en el comportamiento de las variables dependientes.
+
+2.  **Métodos basados en árboles**
+
     -   Objetivo: Detectar patrones complejos y no lineales en el riesgo crediticio, integrando variables macroeconómicas, financieras y alternativas (como Google Trends).
 
     -   Ventajas: Alta precisión, maneja grandes volúmenes de datos, robusto a variables irrelevantes y permite interpretar importancia de variables.
 
     -   Consideraciones: Evitar fuga de información temporal ( data leakage), usar variables rezagadas, validar con divisiones temporales adecuadas (walk-forward).
 
-## SARIMA
+3.  **Prophet**
 
-Usamos modelos SARIMA para pronosticar la perdida esperada de portafolio de crédito, como actividad empresarial, nómina y tarjeta. Estos modelos permiten capturar patrones en el tiempo, incluyendo tendencias y cierta estacionalidad. Ajustamos automáticamente, con el uso de autoarima, el modelo más adecuado para cada serie y generamos predicciones a corto plazo. Aunque el ajuste en el periodo histórico fue aceptable, las proyecciones muestran limitaciones y no logran reflejar por completo los ciclos estacionales observados en los datos.
+    -   Objetivo: Modelar series de tiempo univariantes capturando automáticamente tendencias no lineales, estacionalidades (diaria, semanal, anual) y efectos puntuales (festividades, promociones).
 
-Para el pronóstico de la \*\*pérdida esperada del portafolio de crédito\*\* se utiliza la La forma funcional general de un modelo SARIMA $\ (p,d,q)(P,D,Q)_s$ se expresa como:
+    -   Ventajas: Es más fácil e intuitivo de utilizar, puede incluir días feriados para ajustar comportamientos atípicos, fácil de interpretar.
+
+    -   Consideraciones: La detección automática de “changepoints” puede sobreadaptarse si hay demasiados cambios bruscos.
+
+4.  **VAR (Vector AutoRegresivo)**
+
+    -   Objetivo: Modelar de forma conjunta varias series temporales para capturar sus interdependencias dinámicas y choques mutuos.
+
+    -   Ventajas: Permite analizar cómo un choque en una variable (p. ej. tipos de interés) impacta a las demás; no exige especificar exógenos.
+
+    -   Consideraciones: Todas las series deben ser estacionarias para evitar resultados engañosos; con muchas variables, el número de parámetros crece rápido (curse of dimensionality); es más complicado de hacer en general (o por lo menos nos costó más trabajo). 
+
+## SARIMA(X)
+
+Usamos modelos SARIMA y SARIMAX para pronosticar la pérdida esperada de portafolio de crédito, como actividad empresarial, nómina y tarjeta. Estos modelos permiten capturar patrones en el tiempo, incluyendo tendencias y cierta estacionalidad. Ajustamos automáticamente, con el uso de auto.arima, el modelo más adecuado para cada serie y generamos predicciones a corto plazo. Aunque el ajuste en el periodo histórico fue aceptable, las proyecciones muestran limitaciones y no logran reflejar por completo los ciclos estacionales observados en los datos.
+
+Para el pronóstico de la **pérdida esperada del portafolio de crédito** se utiliza la forma funcional general de un modelo SARIMA $\ (p,d,q)(P,D,Q)_s$ y se expresa como:
 
 $$
 \Phi_P (L^s) \, \phi_p (L) (1 - L)^d (1 - L^s)^D y_t=\Theta_Q (L^s) \, \theta_q (L) \, \varepsilon_t
@@ -656,7 +671,7 @@ donde:
 
 \- $\ (varepsilon_t)$ es el término de error en el periodo \\(t\\).
 
-A continuación se muestra el resultado del modelo ajustado automáticamente (usando \`auto.arima\`) y las predicciones a corto plazo:
+A continuación se muestra el resultado del modelo ajustado automáticamente (usando auto.arima) y las predicciones a corto plazo:
 
 ```{r}
 # Leer datos
@@ -736,7 +751,7 @@ ggplot2::ggplot(df_plot, aes(x = fecha, y = valor, color = tipo)) +
   geom_line(size = 0.9) +
   facet_wrap(~ variable, scales = "free_y") +
   scale_color_manual(values = c("Real" = "black", "Ajustado" = "blue", "Pronóstico" = "red")) +
-  labs(title = "Pronóstico ARIMA",
+  labs(title = "Pronóstico SARIMA",
        x = "Fecha", y = "Valor", color = "Serie") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -744,12 +759,10 @@ ggplot2::ggplot(df_plot, aes(x = fecha, y = valor, color = tipo)) +
 
 ```
 
-## SARIMAX
-
 A diferencia del SARIMA, el modelo SARIMAX incorpora variables externas (en este caso hemos ocupado todas nuestras variables exogenas disponibles) que influyen en el comportamiento de los créditos. Al integrarlas, las proyecciones muestran mayor sensibilidad a los cambios económicos y capturan mejor la dinámica reciente. En general, las predicciones de SARIMAX resultaron más alineadas con los patrones observados, especialmente en series con mayor variabilidad.
 
 ```{r}
-# — 1) Leer y limpiar datos
+# Leer y limpiar datos
 Imx <- read_excel("master_base_filtrado.xlsx") %>%
   janitor::clean_names() %>%
   mutate(
@@ -764,7 +777,7 @@ Imx <- read_excel("master_base_filtrado.xlsx") %>%
   ) %>%
   arrange(llave)
 
-# — 2) Definir series objetivo y exógenas
+# Definir series objetivo y exógenas
 targets <- c(
   "y_pe_actividad_empresarial_o_comercial",
   "y_pe_automotriz",
@@ -781,10 +794,10 @@ exogs <- c(
   "puestos_trabajo","s_p_bmv_ipc","s_p_500"
 )
 
-# — 3) Inicializar lista de resultados
+# 3) Inicializar lista de resultados
 df_list_sarimax <- list()
 
-# — 4) Loop de modelado SARIMAX
+# 4) Loop de modelado SARIMAX
 for (tgt in targets) {
   name_pretty <- str_to_title(str_replace_all(tgt, "y_pe_|_", " "))
 
@@ -836,7 +849,7 @@ for (tgt in targets) {
   df_list_sarimax[[tgt]] <- df_all
 }
 
-# — 5) Unir resultados
+# 5) Unir resultados
 plot_df_sarimax <- bind_rows(df_list_sarimax) %>%
   mutate(type = factor(type, levels = c("Histórico", "Pronóstico")))
 
@@ -867,6 +880,66 @@ print(p_sarimax)
 ```
 
 ## Árboles
+
+Dado que los modelos basados en árboles no consideran inherentemente patrones temporales, diseñamos características adicionales para codificar explícitamente la dinámica temporal. Estas incluyeron rezagos de 1, 3 y 6 meses tanto para los objetivos como para los predictores, promedios móviles para suavizar la volatilidad local, indicadores estacionales (mes del año, estacionalidad seno/coseno) y una variable de tendencia temporal lineal. Tras eliminar los valores faltantes generados por el rezago, construimos un conjunto de datos de entrenamiento para el aprendizaje supervisado.
+
+Implementamos y comparamos cuatro modelos para cada variable objetivo: un árbol de decisión podado, bagging (mediante bosques aleatorios con muestreo completo de variables), un bosque aleatorio estándar y XGBoost.
+
+#### Árboles de Decisión para Regresión
+
+La predicción de un árbol de decisión se basa en dividir el espacio de las variables independientes en regiones disjuntas $R_1, R_2, \dots, R_M$, y asignar a cada región una predicción constante igual al promedio de los valores de la variable objetivo en dicha región:
+
+$$
+ \hat{f}(x) = \frac{1}{|R_l|} \sum_{i \in R_l} y_i
+$$
+
+La partición se construye recursivamente, seleccionando en cada paso la variable y punto de corte que minimizan el error cuadrático dentro de las particiones resultantes. Esto se formaliza con el criterio de suma residual de cuadrados (RSS):
+
+$$
+RSS = \sum_{i \in R_1} (y_i - \bar{y}{R_1}^2 + \sum{i \in R_2} (y_i - \bar{y}_{R_2})^2   
+$$
+
+Random Forest
+
+Random Forest es un método de ensamblado (ensemble) que promedia múltiples árboles de decisión, entrenados sobre muestras bootstrap del conjunto de datos y con una selección aleatoria de variables en cada división. La predicción final es:
+
+$$
+\hat{f}_{RF}(x) = \frac{1}{B} \sum{b=1}^{B} \hat{f}^{(b)}(x) 
+$$
+
+Este método reduce la varianza del modelo sin aumentar sustancialmente el sesgo, mejorando así su capacidad de generalización.
+
+Gradient Boosting y XG Boost
+
+Gradient Boosting entrena secuencialmente árboles que corrigen los errores del modelo ensamblado hasta ese punto:
+
+$$
+F_m(x) = F_{m-1}(x) + \eta \cdot h_m(x)
+$$
+
+$F_m(x)$: modelo total después de $m$ interaciones,
+
+$h_m(x)$: nuevo árbol que ajusta los residuos,
+
+$\eta$: tasa de aprendizaje o shrinkage
+
+XGBoost, una versión optimizada de boosting, agrega regularización explícita para controlar la complejidad del modelo. La función objetivo general es:
+
+$$
+\mathcal{L}{t} = \sum_{i=1}^{n} l(y_i, \hat{y}i{(t)}) + \sum{k=1}^{T} \left( \gamma + \frac{1}{2} \lambda w_k^2 \right) 
+$$
+
+$l(\cdot)$: función de pérdida (ej. error cuadrático),
+
+$T$: número de hojas en el árbol,
+
+$w_k$: peso de la $k$-ésima hoja,
+
+$\gamma$, $\lambda$: hiperparámetros de regularización.
+
+Cada modelo se entrenó con el primer 80 % de los datos ordenados temporalmente y se evaluó con el 20 % restante, utilizando RMSE como métrica de rendimiento. Los resultados mostraron que los métodos de conjunto, en particular los bosques aleatorios y XGBoost, superaron consistentemente a los árboles de decisión individuales, reduciendo considerablemente el error de pronóstico.
+
+Una vez identificado el mejor modelo para cada objetivo, lo reentrenamos utilizando toda la muestra histórica y generamos pronósticos con cinco meses de antelación.
 
 ```{r}
 
@@ -1093,10 +1166,6 @@ plots <- purrr::map2(
     # Fit & forecast
     fc_tbl <- forecast_target(df_targ, targ, mdl, horizon = 5)
 
-    # Debug: confirm fc_tbl columns
-    #print(names(fc_tbl))
-    # [1] "llave"  "actual" "fitted" "Target"
-
     # Now select the two columns we know exist
     df_plot <- fc_tbl %>% dplyr::select(llave, actual, fitted)
 
@@ -1116,67 +1185,11 @@ plots <- purrr::map2(
 do.call(grid.arrange, c(plots, ncol = 2))
 ```
 
-Dado que los modelos basados en árboles no consideran inherentemente patrones temporales, diseñamos características adicionales para codificar explícitamente la dinámica temporal. Estas incluyeron rezagos de 1, 3 y 6 meses tanto para los objetivos como para los predictores, promedios móviles para suavizar la volatilidad local, indicadores estacionales (mes del año, estacionalidad seno/coseno) y una variable de tendencia temporal lineal. Tras eliminar los valores faltantes generados por el rezago, construimos un conjunto de datos de entrenamiento para el aprendizaje supervisado.
-
-Implementamos y comparamos cuatro modelos para cada variable objetivo: un árbol de decisión podado, bagging (mediante bosques aleatorios con muestreo completo de variables), un bosque aleatorio estándar y XGBoost.
-
-#### Árboles de Decisión para Regresión
-
-La predicción de un árbol de decisión se basa en dividir el espacio de las variables independientes en regiones disjuntas $R_1, R_2, \dots, R_M$, y asignar a cada región una predicción constante igual al promedio de los valores de la variable objetivo en dicha región:
-
-$$
- \hat{f}(x) = \frac{1}{|R_l|} \sum_{i \in R_l} y_i
-$$
-
-La partición se construye recursivamente, seleccionando en cada paso la variable y punto de corte que minimizan el error cuadrático dentro de las particiones resultantes. Esto se formaliza con el criterio de suma residual de cuadrados (RSS):
-
-$$
-RSS = \sum_{i \in R_1} (y_i - \bar{y}{R_1}^2 + \sum{i \in R_2} (y_i - \bar{y}_{R_2})^2   
-$$
-
-Random Forest
-
-Random Forest es un método de ensamblado (ensemble) que promedia múltiples árboles de decisión, entrenados sobre muestras bootstrap del conjunto de datos y con una selección aleatoria de variables en cada división. La predicción final es:
-
-$$
-\hat{f}_{RF}(x) = \frac{1}{B} \sum{b=1}^{B} \hat{f}^{(b)}(x) 
-$$
-
-Este método reduce la varianza del modelo sin aumentar sustancialmente el sesgo, mejorando así su capacidad de generalización.
-
-Gradient Boosting y XG Boost
-
-Gradient Boosting entrena secuencialmente árboles que corrigen los errores del modelo ensamblado hasta ese punto:
-
-$$
-F_m(x) = F_{m-1}(x) + \eta \cdot h_m(x)
-$$
-
-$F_m(x)$: modelo total después de \$m\$ interaciones,
-
-$h_m(x)$: nuevo árbol que ajusta los residuos,
-
-$\eta$: tasa de aprendizaje o shrinkage
-
-XGBoost, una versión optimizada de boosting, agrega regularización explícita para controlar la complejidad del modelo. La función objetivo general es:
-
-$$
-\mathcal{L}{t} = \sum_{i=1}^{n} l(y_i, \hat{y}i{(t)}) + \sum{k=1}^{T} \left( \gamma + \frac{1}{2} \lambda w_k^2 \right) 
-$$
-
-$l(\cdot)$: función de pérdida (ej. error cuadrático),
-
-$T$: número de hojas en el árbol,
-
-$w_k$: peso de la $k$-ésima hoja,
-
-$\gamma$, $\lambda$: hiperparámetros de regularización.
-
-Cada modelo se entrenó con el primer 80 % de los datos ordenados temporalmente y se evaluó con el 20 % restante, utilizando RMSE como métrica de rendimiento. Los resultados mostraron que los métodos de conjunto, en particular los bosques aleatorios y XGBoost, superaron consistentemente a los árboles de decisión individuales, reduciendo considerablemente el error de pronóstico.
-
-Una vez identificado el mejor modelo para cada objetivo, lo reentrenamos utilizando toda la muestra histórica y generamos pronósticos con cinco meses de antelación.
-
 ## Prophet
+
+Prophet es un modelo estructural de series temporales diseñado para gestionar automáticamente tendencias, estacionalidad y puntos de cambio. A partir de nuestro conjunto de datos dividimos el 80 % de las observaciones para el ajuste del modelo, y el 20 % restante para la evaluación fuera de la muestra. Para cada serie, ajustamos un modelo Prophet de estacionalidad multiplicativa en la ventana de entrenamiento y, a continuación, generamos predicciones para esa ventana (valores ajustados dentro de la muestra) y para el período de prueba mantenido, más cinco meses adicionales de pronóstico real.
+
+Prophet destaca donde predominan los patrones estructurales: su detección de puntos de cambio se adapta rápidamente a los cambios de tendencia, y la estacionalidad multiplicativa escala de forma natural las fluctuaciones estacionales a medida que aumenta la magnitud de la serie. Normalmente, igualó o superó a nuestros modelos de árbol en segmentos con una estacionalidad fuerte y regular o cambios de tendencia pronunciados, como las pérdidas por préstamos de nómina que aumentan cíclicamente. Sin embargo, cuando los efectos autorregresivos de corto retardo (por ejemplo, las pérdidas del mes inmediatamente anterior) fueron el factor principal, nuestros conjuntos de Bosque Aleatorio y XGBoost a menudo superaron a Prophet al aprovechar directamente esas características de retardo diseñadas.
 
 ```{r}
 run_prophet <- function(df, target, cutoff_frac = 0.8, horizon = 5) {
@@ -1273,10 +1286,6 @@ plots <- map(prophet_results, function(res) {
 
 do.call(grid.arrange, c(plots, ncol = 2))
 ```
-
-Prophet es un modelo estructural de series temporales diseñado para gestionar automáticamente tendencias, estacionalidad y puntos de cambio. A partir de nuestro conjunto de datos dividimos el 80 % de las observaciones para el ajuste del modelo, y el 20 % restante para la evaluación fuera de la muestra. Para cada serie, ajustamos un modelo Prophet de estacionalidad multiplicativa en la ventana de entrenamiento y, a continuación, generamos predicciones para esa ventana (valores ajustados dentro de la muestra) y para el período de prueba mantenido, más cinco meses adicionales de pronóstico real.
-
-Prophet destaca donde predominan los patrones estructurales: su detección de puntos de cambio se adapta rápidamente a los cambios de tendencia, y la estacionalidad multiplicativa escala de forma natural las fluctuaciones estacionales a medida que aumenta la magnitud de la serie. Normalmente, igualó o superó a nuestros modelos de árbol en segmentos con una estacionalidad fuerte y regular o cambios de tendencia pronunciados, como las pérdidas por préstamos de nómina que aumentan cíclicamente. Sin embargo, cuando los efectos autorregresivos de corto retardo (por ejemplo, las pérdidas del mes inmediatamente anterior) fueron el factor principal, nuestros conjuntos de Bosque Aleatorio y XGBoost a menudo superaron a Prophet al aprovechar directamente esas características de retardo diseñadas.
 
 ## VAR
 
@@ -1448,3 +1457,21 @@ ggplot(df_plot, aes(x = llave, y = valor_bps, color = tipo, linetype = tipo)) +
 
 
 ```
+
+## Conclusiones, limitantes y recomendaciones
+
+A través de modelos avanzados de aprendizaje automático, logramos capturar con mayor precisión los movimientos en la PE, lo que permite una mejor previsión temprana de riesgos a partir del entorno económico. Nuestros resultados corroboran que el uso de estos modelos puede ser beneficioso para evaluar riesgos sistémicos en las carteras de crédito vigentes.
+
+Específicamente, una de las implicaciones más relevantes que podemos inferir de nuestros resultados es que implementar un sistema de alerta temprana basado en árboles de decisión para la cartera de créditos personales, que integre mensualmente indicadores como IGAE, TIIE y Google Trends, puede anticipar los picos y valles de la pérdida esperada con un 20 % más de precisión que los enfoques actuales. Esto a su vez permitiría reducir las provisiones excesivas en aproximadamente un 15 %, liberando capital para uso productivo sin comprometer la cobertura de riesgos.
+
+Sin embargo, hay al menos dos limitaciones que tomar en cuenta. Primero, nuestro modelo incorpora únicamente indicadores agregados y señales de preocupación ciudadana de Google Trends para “deuda”. Esto deja fuera toda la heterogeneidad entre prestatarios (historial crediticio individual, nivel de endeudamiento por persona, sector económico, etc.), que también influye de manera determinante en la probabilidad de incumplimiento. Para resolver esto, un posible siguiente paso es integrar datos de buró de crédito y características demográficas o sectoriales de los deudores, para mejorar el modelo y capturar patrones de riesgo específicos de cada subsegmento.
+
+Una segunda limitante tiene que ver con los datos disponibles: entrenamos al modelo con datos desde 2022 hasta 2025, un periodo corto limitado por la implementación del estándar contable IFRS 9 localmente hasta antes de 2022. Este periodo no abarca crisis financieras profundas como la de 2008 o la crisis cambiaria de 1994 (o, hasta cierto punto, la pandemia), lo cual probablemente limita su capacidad para predecir pérdidas en escenarios extremos que no estén representados en el historial. En este caso, se podrían hacer dos cosas: esperar a tener más datos (lo cual tomaría varios años) o ampliar la serie incorporando escenarios sintéticos y someter el modelo a pruebas de estrés y validación cruzada en ventanas críticas.
+
+### Reflexión sobre el uso de AI
+
+Para el desarrollo de nuestros modelos y el presente informe, utilizamos AI sobre todo para, por un lado, hacer una lluvia de ideas de cuáles serían los modelos que podríamos intentar, y rebotar nuestras propuestas para asegurarnos de que los datos que queríamos usar estaban bien pensados para los modelos que queríamos construir. Además, se recurrió ChatGPT para resolver dudas sobre la implementación de variables y la sintaxis de programación, fungiendo como catalizador de ideas y apoyo clave en el proceso de depuración. Utilizamos prompts generalizados como los que se enlistan a continuación:
+
+1.  Mejorar la gramática, claridad o estructura de algunos párrafos ("Reescribe el siguiente párrafo para mejorar la redacción si es necesario. No agregues o quites información, solo mejora la claridad y la fluidez."
+2.  Lluvia de ideas ("Estoy haciendo un trabajo sobre Modelos de Machine Learning (ML) basados en indicadores macroeconómicos para predecir la pérdida esperada en el sistema crediticio de México, ¿cuáles modelos crees que debería de tomar en cuenta para mi análisis?"
+3.  Aclaración de dudas sobre código y ayuda con depuración de errores. También se utilizó para revisar las formas funcionales.
